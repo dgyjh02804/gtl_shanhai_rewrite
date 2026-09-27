@@ -1,0 +1,209 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.parchmentmc.librarian.forgegradle' version '1.+'
+}
+
+version = mod_version
+group = 'com.shanhai'
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(17)
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-Xlint:-processing', '-Xlint:-deprecation', '-Xlint:-removal']
+}
+
+base {
+    archivesName = mod_id
+}
+
+sourceSets.main.resources { srcDirs = ['src/main/resources'] }
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // All mod dependencies are vendored in libs/ (this repo has no wrapper and no remote mod maven).
+    // libs/ is .gitignore'd - rebuild it from the reference instance's mods/ directory.
+    // NOTE: keep exactly ONE gtlcore jar here. The legacy [GTLCore]gtlcore-1.2.3.1-fix9.jar is
+    // deliberately NOT copied: two gtlcore versions on the classpath cause duplicate-class chaos.
+    implementation fileTree(dir: 'libs', include: '*.jar')
+
+    // The mixin annotation processor. Its ONLY job here is to emit the refmap, which translates
+    // @Inject method names written in DEVELOPMENT names (parchment: drawInBatch) into SRG names
+    // (m_272191_) at runtime. Not used for anything else.
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+}
+
+// ==========================================================================================
+// Mixin refmap (2026: the first time this project uses the remap path)
+// ------------------------------------------------------------------------------------------
+// Existing mixins (ShanhaiSmokeMixin / ShanhaiInfiniteThreadDisplayMixin) all use
+// remap = false against this mod's OWN classes, so they never needed a refmap.
+// ShanhaiFontStyleMixin is the first one that targets a MINECRAFT class (net.minecraft.client.gui.Font),
+// which means its @Inject method names must be remapped for the production jar.
+//
+// Without this configuration the mixin would fail ONLY in production (dev names never remapped),
+// which is exactly the failure mode upstream gt_shanhai has (see docs: 原版横幅特效复刻方案.md §5.1).
+// ==========================================================================================
+
+/** Where the annotation processor writes the refmap. Same path is added to the jar root below. */
+def mixinRefMapProvider = layout.buildDirectory.file('mixinrefmap/shanhai.refmap.json')
+def mixinRefMapPath = mixinRefMapProvider.get().asFile.absolutePath
+
+/**
+ * Locates the development-name -> SRG TSRG mapping that the mixin annotation processor must read.
+ *
+ * ForgeGradle keeps it inside its per-user cache and FG 6.0.54 exposes no Gradle API for it
+ * (verified: `jar tf ForgeGradle-6.0.54.jar | grep -i mixin` -> no matches), so we look it up by hand.
+ * A silent miss is NOT acceptable: without this file the processor still writes a refmap, but an
+ * EMPTY one -> the mixin loads in dev and breaks in production (the exact upstream failure mode).
+ * So a miss is a hard build failure.
+ */
+def findObfTsrg = {
+    def wanted = "srg_to_parchment_${mappings_version}-${minecraft_version}.tsrg"
+    def root = new File(gradle.gradleUserHomeDir, 'caches/forge_gradle/minecraft_user_repo/de/oceanlabs/mcp/mcp_config')
+    def found = []
+    if (root.isDirectory()) {
+        root.eachFileRecurse { f -> if (f.isFile() && f.name == wanted) { found << f } }
+    }
+    if (found.isEmpty()) {
+        throw new GradleException(
+                "Mixin refmap: cannot find '${wanted}' under ${root}.\n" +
+                        "That file carries the dev-name -> SRG mapping the mixin annotation processor needs;\n" +
+                        "without it the generated refmap would be empty and the mixin would break in production.")
+    }
+    return found.max { it.lastModified() }.absolutePath
+}
+
+def obfTsrgPath = findObfTsrg()
+
+/**
+ * ForgeGradle's TSRG is written `srg -> develeopment` ("tsrg2 left right" header; left column = m_xxxxx_).
+ * The mixin processor needs the OPPOSITE direction: given the development name used in @Inject
+ * ("drawInBatch") it must find the SRG name ("m_272191_"). So we emit a column-swapped copy.
+ *
+ * Verified empirically: feeding the file as-is makes the processor report
+ *   "Unable to locate obfuscation mapping for @Inject target drawInBatch"
+ * and write a refmap WITHOUT any mappings.
+ */
+def obfTsrgReversed = layout.buildDirectory.file('mixinrefmap/obfuscation-tsrg-dev-to-srg.tsrg')
+def obfTsrgReversedPath = obfTsrgReversed.get().asFile.absolutePath
+
+tasks.register('mixinReverseTsrg') {
+    description = 'Swap the TSRG columns so the mixin processor can map dev names -> SRG names.'
+    def src = new File(obfTsrgPath)
+    inputs.file(src)
+    outputs.file(obfTsrgReversed)
+    doLast {
+        def out = obfTsrgReversed.get().asFile
+        out.parentFile.mkdirs()
+        def lines = src.readLines('UTF-8')
+        out.withWriter('UTF-8') { w ->
+            for (int i = 0; i < lines.size(); i++) {
+                String l = lines.get(i)
+                // Header + tsrg property/parameter lines (two tabs) stay untouched.
+                if (i == 0 || l.isEmpty() || l.startsWith('\t\t')) {
+                    w.writeLine(l)
+                    continue
+                }
+                if (l.startsWith('\t')) {
+                    def t = l.substring(1).trim().split(/\s+/)
+                    if (t.length == 2) {
+                        w.writeLine('\t' + t[1] + ' ' + t[0])                    // field:  <srg> <dev>
+                    } else if (t.length >= 3) {
+                        w.writeLine('\t' + t[2] + ' ' + t[1] + ' ' + t[0])        // method: <srg> <desc> <dev>
+                    } else {
+                        w.writeLine(l)
+                    }
+                    continue
+                }
+                def t = l.trim().split(/\s+/)
+                if (t.length == 2) {
+                    w.writeLine(t[1] + ' ' + t[0])                               // class: <srg> <dev>
+                } else {
+                    w.writeLine(l)
+                }
+            }
+        }
+    }
+}
+
+tasks.named('compileJava', JavaCompile) {
+    dependsOn 'mixinReverseTsrg'
+    // -A<name>=<value> flags are read by MixinAnnotationProcessor.
+    // The list mirrors what the MixinGradle plugin passes (extracted from mixingradle-0.7.38.jar
+    // strings: -AoutRefMapFile= -AdefaultObfuscationEnv= -AmappingTypes=tsrg -AreobfTsrgFile= -Adisable*).
+    options.compilerArgs += [
+            "-AoutRefMapFile=${mixinRefMapPath}",
+            "-AreobfTsrgFile=${obfTsrgReversedPath}",
+            '-AdefaultObfuscationEnv=searge',
+            '-AmappingTypes=tsrg',
+            '-AdisableTargetValidator=true',
+            '-AdisableTargetExport=true',
+            '-AdisableOverwriteChecker=true',
+    ]
+}
+
+minecraft {
+    mappings channel: mappings_channel, version: "${mappings_version}-${minecraft_version}"
+
+    runs {
+        client {
+            workingDirectory file('run')
+            property 'forge.logging.console.level', 'debug'
+            mods { shanhai { source sourceSets.main } }
+        }
+        server {
+            workingDirectory file('run')
+            property 'forge.logging.console.level', 'debug'
+            mods { shanhai { source sourceSets.main } }
+        }
+    }
+}
+
+processResources {
+    filteringCharset = 'UTF-8'
+    var replaceProperties = [
+            mod_id           : mod_id,
+            mod_name         : mod_name,
+            mod_version      : mod_version,
+            mod_authors      : mod_authors,
+            mod_description  : mod_description,
+            minecraft_version: minecraft_version,
+            forge_version    : forge_version,
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/mods.toml']) {
+        expand replaceProperties
+        filteringCharset = 'UTF-8'
+    }
+    filesMatching(['pack.mcmeta']) { filteringCharset = 'UTF-8' }
+}
+
+jar {
+    manifest {
+        attributes([
+                'Specification-Title'   : mod_name,
+                'Specification-Vendor'  : mod_authors,
+                'Specification-Version' : '1',
+                'Implementation-Title'  : mod_name,
+                'Implementation-Version': mod_version,
+                'Implementation-Vendor' : mod_authors,
+                // Forge 1.20.1 从 META-INF/MANIFEST.MF 的 MixinConfigs 属性发现 mixin 配置
+                // （依据：originals/upstream/gtl_shanhai-dishanhai/build.gradle、及已证实的
+                //  gtceu/gtlcore/gtladditions 三个 jar 的 MANIFEST.MF）。
+                'MixinConfigs'          : 'shanhai.mixin.json',
+        ])
+    }
+    // The refmap must sit at the JAR ROOT: shanhai.mixin.json references it by
+    // "refmap": "shanhai.refmap.json" and Mixin loads it as a classpath resource.
+    from(mixinRefMapProvider)
+}

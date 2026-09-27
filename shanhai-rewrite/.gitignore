@@ -1,0 +1,7 @@
+.gradle/
+build/
+run/
+# 🔴 33 个 jar ≈ 105 MB ⇒ 不入库；只放行清单（写 `libs/*` 而非 `libs/`，否则下面的 `!` 失效）
+libs/*
+!libs/README.md
+*.log

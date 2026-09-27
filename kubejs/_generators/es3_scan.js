@@ -1,0 +1,78 @@
+// ES3 / Rhino compliance scanner + syntax-check harness.
+// 🔴 为什么要它：`node --check` 只查【语法】，而本工程的坑是【Node 认、Rhino 不认】
+//    —— 箭头函数 / let / const / 模板串在 Node 24 里全是合法语法 ⇒ node --check 一律 exit 0。
+//    ⇒ 所以第三个状态（"故意插语法错"）必须用【真语法错】做对照，而 Rhino 限制要单独扫。
+'use strict'
+var fs = require('fs')
+
+function stripCommentsAndStrings(src) {
+    var out = ''
+    var i = 0, n = src.length
+    var state = 'code'
+    while (i < n) {
+        var c = src[i], d = src[i + 1]
+        if (state === 'code') {
+            if (c === '/' && d === '/') { state = 'line'; i += 2; out += '  '; continue }
+            if (c === '/' && d === '*') { state = 'block'; i += 2; out += '  '; continue }
+            if (c === '\'') { state = 'sq'; i++; out += ' '; continue }
+            if (c === '"') { state = 'dq'; i++; out += ' '; continue }
+            if (c === '`') { state = 'bt'; i++; out += ' '; continue }
+            out += c; i++; continue
+        }
+        if (state === 'line') { if (c === '\n') { state = 'code'; out += '\n' } else { out += ' ' } i++; continue }
+        if (state === 'block') { if (c === '*' && d === '/') { state = 'code'; i += 2; out += '  ' } else { out += (c === '\n' ? '\n' : ' '); i++ } continue }
+        if (state === 'sq') { if (c === '\\') { i += 2; out += '  '; continue } if (c === '\'') { state = 'code' } out += ' '; i++; continue }
+        if (state === 'dq') { if (c === '\\') { i += 2; out += '  '; continue } if (c === '"') { state = 'code' } out += ' '; i++; continue }
+        if (state === 'bt') { if (c === '\\') { i += 2; out += '  '; continue } if (c === '`') { state = 'code' } out += (c === '\n' ? '\n' : ' '); i++; continue }
+    }
+    return out
+}
+
+var RULES = [
+    { id: 'arrow-fn', re: /=>/g, why: '箭头函数 —— Rhino 不支持' },
+    { id: 'let', re: /\blet\s+[A-Za-z_$]/g, why: '`let` —— Rhino 全局作用域不支持' },
+    { id: 'const', re: /\bconst\s+[A-Za-z_$]/g, why: '`const` —— Rhino 全局作用域不支持' },
+    { id: 'template-raw', re: /`/g, why: '模板字符串 —— 不支持' },
+    { id: 'optional-chain', re: /\?\./g, why: '可选链 ?. —— 不支持' },
+    { id: 'spread', re: /\.\.\./g, why: '展开/剩余 —— 不支持' },
+    { id: 'class', re: /\bclass\s+[A-Za-z_$]/g, why: 'class 语法 —— 不支持' },
+    { id: 'async', re: /\basync\s+/g, why: 'async —— 不支持' },
+    { id: 'await', re: /\bawait\s+/g, why: 'await —— 不支持' },
+    { id: 'for-of', re: /\bof\s+[A-Za-z_$]/g, why: 'for...of —— 不支持（且此处极易误报，需人工看）' },
+    { id: 'destructure-obj', re: /\bvar\s*\{/g, why: '对象解构声明 —— 不支持' },
+    { id: 'destructure-arr', re: /\bvar\s*\[/g, why: '数组解构声明 —— 不支持' },
+    { id: 'default-param', re: /function\s*\([^)]*=[^)]*\)/g, why: '默认参数 —— 可能不支持' }
+]
+
+function scan(name, file) {
+    var src = fs.readFileSync(file, 'utf8')
+    var code = stripCommentsAndStrings(src)
+    var lines = code.split(/\r?\n/)
+    var hits = []
+    for (var r = 0; r < RULES.length; r++) {
+        var rule = RULES[r]
+        for (var l = 0; l < lines.length; l++) {
+            rule.re.lastIndex = 0
+            if (rule.re.test(lines[l])) hits.push({ rule: rule.id, why: rule.why, line: l + 1, text: lines[l].trim().substring(0, 110) })
+        }
+    }
+    console.log('=== ' + name + ' ===')
+    console.log('   file: ' + file)
+    console.log('   lines=' + lines.length + '   ES3/Rhino 违规命中=' + hits.length)
+    for (var h = 0; h < hits.length; h++) console.log('     [' + hits[h].rule + '] L' + hits[h].line + ' :: ' + hits[h].text + '   <- ' + hits[h].why)
+    return hits.length
+}
+
+var B = 'C:\\Users\\david\\Desktop\\构建\\shanhai重构\\recipe-convert\\'
+var V = 'C:\\Users\\david\\Desktop\\65866652\\日常\\versions\\GTL山海9.10test\\kubejs\\server_scripts\\'
+var n1 = scan('NEW DRAFT', B + 'shanhai_pf_recipes.NEW.js')
+var n2 = scan('OLD LIVE FILE', V + 'shanhai_pf_recipes.js')
+
+// positive control: a file we KNOW has violations
+var ctrl = 'var a = () => 1\nconst b = `x`\nlet c = { ...d }\n'
+fs.writeFileSync(B + '_rhino_control.js', ctrl, 'utf8')
+var n3 = scan('POSITIVE CONTROL (故意含 ES6，应报 >0)', B + '_rhino_control.js')
+console.log('')
+console.log('--- 自证 ---')
+console.log('  正面对照（已知含违规）命中 = ' + n3 + '  ⇒ ' + (n3 > 0 ? '扫描器【会】报警 ✓' : '扫描器坏了 ❌'))
+console.log('  NEW 草稿 = ' + n1 + ' / OLD 线上文件 = ' + n2)
