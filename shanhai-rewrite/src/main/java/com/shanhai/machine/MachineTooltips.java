@@ -2,6 +2,8 @@ package com.shanhai.machine;
 
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 
+import com.shanhai.common.thread.ShanhaiConcurrencyTables;
+
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
@@ -65,7 +67,20 @@ public final class MachineTooltips {
     public static final String KEY_MAX_PARALLEL_BASE = "shanhai.tooltip.max_parallel.base";
     /** <b>候选 A 第 2 行</b>：单起一行说明「谁能让它涨」（照图2 的形态）。 */
     public static final String KEY_MAX_PARALLEL_RAISE = "shanhai.tooltip.max_parallel.raise";
-    /** <b>候选 C 第 2 行</b>：谁能让跨配方线程数涨 + 如实标注本阶段尚未生效。 */
+    /**
+     * <b>【2026-09-28 起不再使用】候选 C 第 2 行的 lang 键。</b>
+     *
+     * <pre>
+     *   zh_cn : 「线程倍率槽可提高跨配方线程数 §8（本阶段尚未生效）」
+     *   en_us : "The thread multiplier slot can raise cross-recipe threads §8(not active yet)"
+     * </pre>
+     * 🔴 <b>为什么停用</b>：世线残片本轮真的接上了（{@code fromModule} 第 ⑤ 行改由
+     * {@link #crossRecipeThreadsRaiseLine()} 现算）。那条 lang 文案里
+     * 「（本阶段尚未生效）」现在<b>是假话</b>，本项目禁止"活的假数据"。
+     * <p>⚠️ <b>遗留</b>：{@code src/main/resources/.../lang/*.json} 里的那两条文案<b>本轮没有改</b>
+     * （不在本次授权的写入范围内）⇒ 它们目前是<b>无人引用的死键</b>。
+     * 详见交付报告"未做到/待办"一节。
+     */
     public static final String KEY_CROSS_RECIPE_THREADS_RAISE = "shanhai.tooltip.cross_recipe_threads.raise";
 
     private MachineTooltips() {}
@@ -113,11 +128,29 @@ public final class MachineTooltips {
                 Component.translatable(KEY_MAX_PARALLEL_RAISE),
                 // ④ 跨配方线程数（当前值）—— 候选 C 第 1 行
                 Component.translatable(KEY_CROSS_RECIPE_THREADS, crossRecipeThreads),
-                // ⑤ 谁能提高它 —— 候选 C 第 2 行
-                Component.translatable(KEY_CROSS_RECIPE_THREADS_RAISE),
+                // ⑤ 谁能提高它 —— 候选 C 第 2 行（🔴 2026-09-28：改由 Java 现算，见方法注释）
+                crossRecipeThreadsRaiseLine(),
                 // ⑥ 可用配方类型（中文名清单）
                 Component.translatable(KEY_RECIPE_TYPES, recipeTypesList(recipeTypes)),
         };
+    }
+
+    /**
+     * <b>候选 C 第 2 行：谁能让跨配方线程数涨</b>（2026-09-28 起由 Java 现算，不再走 lang 键）。
+     *
+     * <h2>为什么不在 lang 里写死</h2>
+     * 这条文案要列出 8 种世线残片各自的单枚值 —— 那就是<b>第二份真源</b>，
+     * 而且它是"会过期的那一种"（用户改数值时没人会想起来改 lang）。
+     * ⇒ 数字统一取 {@link ShanhaiConcurrencyTables#shardSummary()}，
+     * 与机器真正算线程用的是<b>同一张表</b>，不可能对不上。
+     *
+     * <p>⚠️ <b>已知代价</b>：本行<b>不再随语言切换</b>（永远是中文）。
+     * 这是本轮写入范围限制下的取舍（lang 文件不在授权范围内）。
+     * 本工程已有同类既有偏离（en_us 缺 16 条配方类型键 ⇒ 英文环境显示裸键），量级相当。
+     */
+    private static Component crossRecipeThreadsRaiseLine() {
+        return Component.literal("§7线程槽放入【世线残片】可提高跨配方线程数（单枚：§f"
+                + ShanhaiConcurrencyTables.shardSummary() + "§7）");
     }
 
     /**

@@ -63,28 +63,65 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * 原样喂进去会打出 {@code Unable to locate obfuscation mapping for @Inject target width}——
  * 见 {@code build.gradle} 的 {@code mixinReverseTsrg} 任务（列对调后再喂）。
  *
- * <h2>2. 为什么只注入 {@code drawInBatch(FormattedCharSequence,…)} 一个重载</h2>
- * 因为 <b>{@code Component} 那个重载会转调它</b>，这是字节码级的实证，不是推断
- * （{@code javap -c net.minecraft.client.gui.Font}，{@code drawInBatch(Component,…)} 的方法体只有一条
- * {@code invokeinterface Component.getVisualOrderText()} + 一条
- * {@code invokevirtual drawInBatch:(Lnet/minecraft/util/FormattedCharSequence;…)I}）：
- * <pre>
- * 0: aload_0 / aload_1
- * 2: invokeinterface Component.getVisualOrderText:()Lnet/minecraft/util/FormattedCharSequence;
- *   … 参数原样透传 …
- * 23: invokevirtual drawInBatch:(Lnet/minecraft/util/FormattedCharSequence;FFIZLorg/joml/Matrix4f;…)I
- * </pre>
- * ⇒ 加上 {@code Component} 那份注入<b>不会多覆盖任何东西</b>，只会让 refmap 多一条、
- * 让「注入点找得到/找不到」这件事多一个失败面。
- * <p>
- * ⚠️ <b>但 {@code Font.drawInBatch(String,…)} 是另一条独立路径</b>
- * （它转调 {@code drawInBatch(String,…,boolean)}，<b>不经过</b> FCS 重载）⇒ 用
- * {@code GuiGraphics.drawString(font, "裸字符串", …)} 画出来的 {@code &$…-} <b>不会</b>有特效。
- * 本工程所有 {@code &$…-} 文本都是 {@code Component}（lang 条目 / {@code Component.literal}），
- * 所以这条路不需要 —— 如实记在这里，不当成「没做到」。
+ * <h2>2. 🔴 注入点 = 两条「漏斗」，不是每个重载都注（2026-10-01 重写）</h2>
+ * <b>上一版这一节只讲了 FCS 一条家族，并且写下了「String 那条路本工程不需要」的结论</b>——
+ * 那句话被实机证伪（用户图1：{@code &$ultimateRainbow-模块要求：…} 原样画在配方页上）。
+ * 现按 {@code javap -c} 的全量调用图重写（原文见 {@code handoff\outbound\模块要求-露码修正.md} §11）。
  *
- * <h2>3. 🔴 {@code require = 1}（故意的）</h2>
- * 注入点找不到时<b>启动就崩</b>，而不是静默放过。
+ * <p><b>{@code Font} 的文字绘制是两个互不相干的家族</b>（同一份字节码在开发 jar 与 SRG 运行时 jar 里都核过）：
+ * <pre>
+ *   【Component 家族】 drawInBatch(Component,…)          :23 → drawInBatch(FormattedCharSequence,…) :18
+ *                                                             ↑ m_272191_（本类注入点①）
+ *   【String 家族】    drawInBatch(String,…II)I          :22 → drawInBatch(String,…IIZ)I         :20
+ *                        ↑ m_271703_（10 参，只转调）              ↑ m_272078_（本类注入点②）
+ *   ⇒ 两个家族的 {@code drawInternal} 都是 private，外人进不来：
+ *     drawInternal(String,…)=m_271880_ / drawInternal(FormattedCharSequence,…)=m_272085_
+ * </pre>
+ * ⇒ <b>每个家族只需要注「漏斗」那一个</b>，多注一个是白多一个失败面：
+ * <ul>
+ *   <li>① {@link #shanhai$styleDrawInBatch}（FCS）= 所有 {@code Component} 文本的收口；</li>
+ *   <li>② {@link #shanhai$styleDrawInBatchString}（String <b>11 参</b>那个）= 所有 String 文本的收口。</li>
+ * </ul>
+ * 🔴 <b>为什么必须是 11 参那个、而不是 10 参那个</b>（这是本轮最容易踩空的一步）：
+ * <pre>
+ *   · 10 参 m_271703_ 的方法体只有一条转调：:22 invokevirtual m_272078_() ⇒ 注 11 参照样罩住 10 参的调用者；
+ *   · 而 LDLib 实际走的那条路【不是】10 参：
+ *       LabelWidget.drawInBackground :108  invokevirtual GuiGraphics.m_280056_:(Font;String;IIIZ)I
+ *       m_280056_                    :12   invokevirtual drawString:(Font;String;FFIZ)I
+ *       drawString(Font,String,float,float,int,boolean)
+ *                                    :40   invokevirtual Font.m_272078_:(String;…IIZ)I   ← 🔴 直调 11 参
+ *   ⇒ 只注 10 参 = <b>那条要修的路径一条都罩不住</b>（「以为接管了、其实没有」的第二种形态）。
+ * </pre>
+ *
+ * <h2>2.5 🔴 这个注入点罩得住 / 罩不住什么（照实测写，别默认）</h2>
+ * <b>罩得住</b>（全部经字节码链核实）：
+ * <ol>
+ *   <li>{@code GuiGraphics.drawString(Font, String, float,float,int,boolean)} 及其 int 坐标重载
+ *       {@code m_280056_} —— LDLib {@code LabelWidget} 的 String 分支走这条；</li>
+ *   <li>{@code Font.drawInBatch(String, 10 参)} 的直接调用者 —— 实测本 classpath 里
+ *       AE2 / FTB-Library / KubeJS / Polylib / SophisticatedCore|Storage 都在直接调 {@code m_271703_}；</li>
+ *   <li>直接调 11 参 {@code m_272078_} 的调用者（实测：Polylib {@code GuiRender}）；</li>
+ *   <li>（既有注入点）所有 {@code Component} 文本：聊天 / 物品名 / tooltip / JEI，
+ *       以及 LDLib {@code LabelWidget} 的 <b>Component 分支</b>（{@code m_280614_} → {@code m_280649_} → FCS 漏斗）。</li>
+ * </ol>
+ * 🔴 <b>罩不住（已知第三条路，<u>本轮不动</u>）</b>：{@code Font.drawInBatch8xOutline(FormattedCharSequence,…)}
+ * = {@code m_168645_} —— 它<b>自己 new 一个 {@code Font$StringRenderOutput}</b> 逐偏移画描边，
+ * <b>不经过任何一个 {@code drawInBatch}</b>（反向扫描 {@code javap -c} 全类无命中）。
+ * 实测调用者只有两个：原版 {@code SignRenderer}（告示牌文字）与 Jade
+ * {@code impl/ui/ProgressStyle}（{@code glowText} 打开时把入参 Component 描边画出来）。
+ * ⇒ 这是一条<b>改前就存在</b>的缺口，与本次改动无关；本轮如实记下，不在这里修（要修得再补一个注入点）。
+ *
+ * <h2>3. 🔴 两个注入点都用 {@code require = 1}（故意的）</h2>
+ * 注入点找不到时<b>启动就崩</b>，而不是静默放过。用户 2026-10-01 拍板的原话是
+ * 「启动就崩其实是最好修的，要是莫名其妙崩了才难修」——
+ * 因为「崩」有栈可查、一条命令就能回滚，「静默失效」则<b>分不清是没注入还是算错了</b>。
+ * <p>它<b>不是</b>赌运气：两条风险各自可以离线判死（详见本类对应的交接文档 §11.2）：
+ * <ol>
+ *   <li><b>匹配数</b>：描述符在目标类里的匹配数 == 1（{@code javap -p -s} 全表精确计数，
+ *       开发 jar 与 SRG jar 各一遍）⇒ Mixin 的匹配是静态的 ⇒ 不会「找不到」；</li>
+ *   <li><b>refmap</b>：反查喂给注解处理器的 TSRG，确认该 dev 描述符<b>有 SRG 映射</b>
+ *       （{@code drawInBatch(String,…,IIZ)} → {@code m_272078_}）⇒ 生产 jar 里名字也翻得对。</li>
+ * </ol>
  * 对应地，{@link ShanhaiFontStyleRenderer} 里所有算色/绘制逻辑都包在 {@code try/catch} 里
  * ⇒ 两条一起构成：<b>注入失败 = 响亮地崩；渲染算错 = 安静地不生效</b>。
  *
@@ -95,6 +132,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * <p>
  * ⚠️ <b>无头专用服务端不会加载本混入</b>（它在 {@code shanhai.mixin.json} 的 {@code client} 数组里）
  * ⇒ 那一行<b>只会在客户端日志里出现</b>，专服冒烟证明不了它。
+ * <p>⚠️ 那行日志的 {@code methods=…} 字段<b>逐字对应本类所有 {@code @Inject}</b>
+ * （{@link ShanhaiFontStyleRenderer#HOOK_METHODS}）⇒ 加了注入点就必须同步改它，否则日志会撒谎。
  *
  * <h2>5. 为什么三个 {@code width} 重载都要注入</h2>
  * {@code javap -c} 实测：{@code width(String)} / {@code width(FormattedText)} /
@@ -124,6 +163,45 @@ public class ShanhaiFontStyleMixin {
                                           Font.DisplayMode mode, int packedLight, int packedOverlay,
                                           CallbackInfoReturnable<Integer> cir) {
         Integer handled = ShanhaiFontStyleRenderer.renderFcs((Font) (Object) this, text, x, y, color,
+                shadow, matrix, buffer, mode, packedLight, packedOverlay);
+        if (handled != null) {
+            cir.setReturnValue(handled);
+            cir.cancel();
+        }
+    }
+
+    /**
+     * 接管 {@code Font.drawInBatch(String, …, boolean)}（<b>11 参那个</b>）——
+     * <b>所有「裸字符串」文字渲染的收口</b>（= 第二条家族）。
+     *
+     * <p>🔴 <b>为什么是 11 参而不是 10 参</b>：见类注释 §2 —— 10 参只转调它，
+     * 而 {@code GuiGraphics.drawString(Font, String, float, float, int, boolean)} 是<b>直调 11 参</b>的
+     * （SRG 运行时原文 {@code :40 invokevirtual Font.m_272078_}），LDLib {@code LabelWidget} 正走这条。
+     *
+     * <p>描述符逐字符出处（{@code javap -p -s} 原文，开发 jar 与 SRG jar 各一份）：
+     * <pre>
+     *   descriptor: (Ljava/lang/String;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/gui/Font$DisplayMode;IIZ)I
+     *   末位那个 Z = bidirectional（10 参那个转发时传 false ⇒ 本注入点统一收口）
+     *   SRG 名 = m_272078_（反查 srg_to_parchment_2023.09.03-1.20.1.tsrg 得到，已核）
+     * </pre>
+     *
+     * <p>{@code at = HEAD} + {@code cancellable} ⇒ 我们先整行画完，然后取消原版渲染
+     * （与 FCS 那条同一个做法，照上游 {@code WobbleFontMixin.java:637-638}）。
+     * <p>⚠️ 我们自己发起的 String 绘制（{@code drawDegraded} 的退化成字、{@code drawStyled} 的 prefix）
+     * 会再次进到这里 —— 由 {@code ShanhaiFontStyleRenderer} 的重入标记立刻放行（那两处必须由原版画，
+     * 因为 {@code §} 只在 String 路径上被原版解析）。
+     */
+    @Inject(
+            method = "drawInBatch(Ljava/lang/String;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/gui/Font$DisplayMode;IIZ)I",
+            at = @At("HEAD"),
+            cancellable = true,
+            require = 1)
+    private void shanhai$styleDrawInBatchString(String text, float x, float y, int color,
+                                                boolean shadow, Matrix4f matrix, MultiBufferSource buffer,
+                                                Font.DisplayMode mode, int packedLight, int packedOverlay,
+                                                boolean bidirectional,
+                                                CallbackInfoReturnable<Integer> cir) {
+        Integer handled = ShanhaiFontStyleRenderer.renderString((Font) (Object) this, text, x, y, color,
                 shadow, matrix, buffer, mode, packedLight, packedOverlay);
         if (handled != null) {
             cir.setReturnValue(handled);

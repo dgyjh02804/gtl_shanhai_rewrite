@@ -14,6 +14,7 @@ import com.gregtechceu.gtceu.common.data.GCyMRecipeTypes;
 import com.gregtechceu.gtceu.common.data.GTBlocks;
 import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
 import com.shanhai.common.compat.GtlAddCompat;
+import com.shanhai.common.heat.ShanhaiHeatGate;
 import com.shanhai.common.machine.PrimordialOmegaEngineMachine;
 import com.shanhai.common.recipe.PrimordialRecipeEffects;
 import com.shanhai.common.recipe.ShanhaiRecipeTypes;
@@ -307,6 +308,10 @@ public final class ModuleRegistry {
             GTLRecipeTypes.PRECISION_ASSEMBLER_RECIPES,
             GTRecipeTypes.CIRCUIT_ASSEMBLER_RECIPES,
             GTRecipeTypes.PACKER_RECIPES,
+            // 🆕 2026-10-01（用户点单）：原初物质定型 = 压模器 + 流体固化器全部配方，模头/模具 → 编程电路。
+            //    它挂在这一台上是用户点名的（"为机器原初临界加工模块添加全新的配方种类"）；
+            //    本来这台就已经挂着压模器与流体固化器两个原类型（见上面两行），所以是"同台再加一个改写版"。
+            ShanhaiRecipeTypes.PRIMORDIAL_MATTER_FORMING,
     };
 
     /** 原初宇宙反应炉 —— 上游 :845。 */
@@ -457,6 +462,8 @@ public final class ModuleRegistry {
             GTLRecipeTypes.NANO_FORGE_RECIPES,
             GTLRecipeTypes.PCB_FACTORY_RECIPES,
             GTLRecipeTypes.FUEL_REFINING_RECIPES,
+            // 🆕 2026-09-30 用户点单：模板 = 纳米蜂群工厂（同数组里那条 NANO_FORGE_RECIPES），透镜全换成电路
+            ShanhaiRecipeTypes.PRIMORDIAL_SWARM_CASTING,
     };
 
     /** 原初韶光聚合核心 —— 上游 :976。 */
@@ -482,6 +489,8 @@ public final class ModuleRegistry {
             GTLRecipeTypes.DIMENSIONAL_FOCUS_ENGRAVING_ARRAY_RECIPES,
             GtlAddCompat.photonMatrixEtch(),
             ShanhaiRecipeTypes.WL_BOARD_WAFER_ETCHING,
+            // 🆕 2026-09-30 用户点单：模板 = 光子晶阵蚀刻（同数组里那条 GtlAddCompat.photonMatrixEtch()），透镜全换成电路
+            ShanhaiRecipeTypes.PRIMORDIAL_LASER_ETCHING,
     };
 
     /** 原初太虚宇宙锻炉 —— 上游 :1735。 */
@@ -588,16 +597,25 @@ public final class ModuleRegistry {
      * 🟢 2026-09-26 用户点单新增：<b>世线裂解枢纽</b>（{@code shanhai:worldline_cracking_hub}）。
      *
      * <p>用户原话：「然后可以添加世线裂解枢纽作为新模块，贴图和之前的模块一样，<b>配方就世线采样</b>」。
-     * ⇒ <b>只挂 {@link ShanhaiRecipeTypes#WORLDLINE_SAMPLING}（世线采样）这一个</b>。
+     * ⇒ 当时<b>只挂 {@link ShanhaiRecipeTypes#WORLDLINE_SAMPLING}（世线采样）这一个</b>。
      *
-     * <p>🔴 <b>故意没挂另外两个</b>（{@code worldline_matter_recurrence} / {@code worldline_probability_cracking}）——
-     *   源码注释说那三个都归它，但用户这轮只说了「配方就世线采样」⇒ <b>不自作主张</b>，等用户明确。
+     * <p>🟢 <b>2026-09-29 用户点单追加</b>：再挂 {@link ShanhaiRecipeTypes#WORLDLINE_CUTTING}（原初世线切割）
+     *   ⇒ 现在<b>挂 2 个</b>：世线采样 ＋ 原初世线切割。
+     *   <p>⚠️ 加之前已实证：{@code worldline_cutting} <b>不是</b>"原版零挂载"的那种悬空类型 ——
+     *   {@code ShanhaiRecipeTypes} 里 {@code GTRecipeTypes.register("worldline_cutting", "multiblock")}
+     *   真在跑（非注释块），且在 {@link #RECIPE_DEBUG_MODULE} 的 41 条大表里已有一条；
+     *   <b>不存在第二个模块独占它</b>（全工程只有调试模块这张 catch-all 表引用过它）⇒ 不会撞车。
+     *
+     * <p>🔴 <b>仍未挂另外两个</b>（{@code worldline_matter_recurrence} / {@code worldline_probability_cracking}）
+     *   —— 源码注释说那三个都归它，但用户至今没点这两个 ⇒ <b>不自作主张</b>，等用户明确。
      *
      * <p>⚠️ 这个数组读的是 {@link ShanhaiRecipeTypes} 的静态字段；时机已实证是对的
      *   （见上方 {@link #RECIPE_DEBUG_MODULE} 的长注释：GTRecipeTypes.init() 先于 GTMachines.init()）。
      */
     public static final GTRecipeType[] RECIPE_WORLDLINE_CRACKING_HUB = {
             ShanhaiRecipeTypes.WORLDLINE_SAMPLING,
+            // 🟢 2026-09-29 追加（原初世线切割）
+            ShanhaiRecipeTypes.WORLDLINE_CUTTING,
     };
 
     /**
@@ -664,6 +682,11 @@ public final class ModuleRegistry {
                 "SPACETIME_DISTORTION",
                 // ───── 2026-09-26 新增的第 41 条（用户点单「原初物质解构」）─────
                 "PRIMORDIAL_MATTER_DECONSTRUCTION",
+                // ───── 🆕 2026-09-30 新增的第 42／43 条（用户点单「原初激光蚀刻」＋「原初蜂群铸造」）─────
+                "PRIMORDIAL_LASER_ETCHING",
+                "PRIMORDIAL_SWARM_CASTING",
+                // ───── 🆕 2026-10-01 新增的第 44 条（用户点单「原初物质定型」）─────
+                "PRIMORDIAL_MATTER_FORMING",
         };
         GTRecipeType[] types = {
                 ShanhaiRecipeTypes.PRIMORDIAL_POWER_GENERATOR,
@@ -709,6 +732,11 @@ public final class ModuleRegistry {
                 ShanhaiRecipeTypes.SPACETIME_DISTORTION,
                 // ───── 2026-09-26 新增的第 41 条（用户点单「原初物质解构」）─────
                 ShanhaiRecipeTypes.PRIMORDIAL_MATTER_DECONSTRUCTION,
+                // ───── 🆕 2026-09-30 新增的第 42／43 条（用户点单「原初激光蚀刻」＋「原初蜂群铸造」）─────
+                ShanhaiRecipeTypes.PRIMORDIAL_LASER_ETCHING,
+                ShanhaiRecipeTypes.PRIMORDIAL_SWARM_CASTING,
+                // ───── 🆕 2026-10-01 新增的第 44 条（用户点单「原初物质定型」）─────
+                ShanhaiRecipeTypes.PRIMORDIAL_MATTER_FORMING,
         };
         if (names.length != types.length) {
             throw new IllegalStateException("[SHANHAI-DEBUG-MODULE] 模块 " + path
@@ -1165,7 +1193,8 @@ public final class ModuleRegistry {
                     () -> RECIPE_DEBUG_MODULE,
                     PrimordialModuleMachine.ParallelTable.STANDARD,
                     false),
-            // 🟢 2026-09-26 新增第 26 台（用户点单：世线裂解枢纽，只挂【世线采样】）
+            // 🟢 2026-09-26 新增第 26 台（用户点单：世线裂解枢纽）。2026-09-29 追加第二个类型
+            // ⇒ 现在挂【世线采样 ＋ 原初世线切割】两个（见上方 RECIPE_WORLDLINE_CRACKING_HUB 的注释）。
             new ModuleSpec(
                     "WORLDLINE_CRACKING_HUB",
                     "worldline_cracking_hub",
@@ -1237,6 +1266,37 @@ public final class ModuleRegistry {
                     PrimordialModuleMachine.parallelTableSize(PrimordialModuleMachine.ParallelTable.ENHANCED),
                     PrimordialModuleMachine.parallelTableSize(PrimordialModuleMachine.ParallelTable.STANDARD),
                     SPECS.size(), enhanced, standard, PrimordialModuleMachine.DEFAULT_PARALLEL);
+        }
+        // ───── 🆕 2026-09-30：恒星热力槽白名单自检（**注册期硬拦**，不是装饰） ─────
+        //
+        //  背景：用户选择题答案（逐字）**「B. 只留那三台」** ⇒ GUI 里那一格由一张
+        //  **id 白名单**（ShanhaiHeatGate.HEAT_SLOT_MACHINE_IDS）决定显不显示。
+        //  🔴 按 id 决定 UI 是一条**会静默失效**的写法：白名单里写错一个字 / 那台机器被改名，
+        //     结果是玩家**看不到那一格**，而日志里一个字都不会有 —— 与"本来就没有"完全同形。
+        //  ⇒ 所以这里把"三个 id 必须逐个能在已注册的模块里找到"变成**注册期异常**：
+        //     漏了会【报错】，不会【默默少一格】。
+        //
+        //  时机：本方法 = ShanhaiMod(@Mod 构造器) → ShanhaiRegistration.register(bus) → ShanhaiRegistry.init()
+        //        的第 ③ 段（见本类类注释的初始化链）。此刻 SPECS 已可读、机器即将注册
+        //        ⇒ 是"能最早发现、且一定先于任何玩家进游戏"的那个点。
+        //  判据：已注册 id 的取值口径 = "shanhai:" + SPECS.path()，与
+        //        PrimordialModuleMachine#shanhai$machineId()（方块注册表键）同源
+        //        —— 旁证：方块 lang 键全部是 block.shanhai.<path>。
+        {
+            final List<String> registeredIds = new ArrayList<>(SPECS.size());
+            for (ModuleSpec spec : SPECS) {
+                registeredIds.add("shanhai:" + spec.path());
+            }
+            final String heatSlotProblem = ShanhaiHeatGate.verifyMachineIds(registeredIds);
+            if (heatSlotProblem != null) {
+                throw new IllegalStateException(heatSlotProblem);
+            }
+            ShanhaiMod.LOGGER.info("[SHANHAI-HEATSLOT] 白名单自检通过：{} 台模块里有 {} 台会显示恒星热力槽 = {}"
+                            + "（用户 2026-09-30 选择题答案「B. 只留那三台」）；其余 {} 台不显示这一格。",
+                    registeredIds.size(),
+                    ShanhaiHeatGate.HEAT_SLOT_MACHINE_IDS.size(),
+                    ShanhaiHeatGate.HEAT_SLOT_MACHINE_IDS,
+                    registeredIds.size() - ShanhaiHeatGate.HEAT_SLOT_MACHINE_IDS.size());
         }
         // ───── fail-fast：句柄为 null 绝不允许流进主机的 pattern() ─────
         PRIMORDIAL_MATTER_RECOMBINATOR_CORE = require("PRIMORDIAL_MATTER_RECOMBINATOR_CORE");
@@ -1445,7 +1505,31 @@ public final class ModuleRegistry {
         //      applyParallel(…, int limit) 是 gtceu 原版签名，装不下并行表末三档的
         //      4.6e18 / 6.9e18 / Long.MAX ⇒ 现在改走同名的 long 重载
         //      （PrimordialRecipeEffects，≤ 21 亿 时逐字转交 int 版 ⇒ 前 14 档行为不变）。
-        modified = PrimordialRecipeEffects.applyParallel(modified, module, module.getRecipeLogicMaxParallel());
+        //
+        //   🔴🔴 2026-09-30：实参再改成【并行预算 = 表值 × 跨配方线程数】—— 用户报的
+        //      「零点能反应堆不吃跨配方并行，那个发电量都没加」的根因就在这一行。
+        //   · 病根：那台「原始真空零点能发生器」是全 24 台里【唯一】被 shanhai$resolveRouting()
+        //     判定为 isGenerator() 的机器，它 setUseMultipleRecipes(false) ⇒ 【退回原生链】；
+        //     而引擎路径那一边（PrimordialModuleRecipeLogic#calculateParallels()）用的是
+        //     totalParallelLimitFor(getCurrentParallel(), getMultipleThreads()) = 表值 × 线程数。
+        //     ⇒ 两条路对"跨配方线程"的态度相反：23 台吃，唯一那台发电的不吃。
+        //   · 证据：用户两张图同一台机器，线程槽 1 个 → 121 个（30× 世线残片·共鸣），
+        //     产能恒为 92.23E EU/t = 2^31 × 2147483647 ÷ 0.05 —— 那个 2147483647 就是
+        //     「永恒物质模块」的表值本身，里面没有线程因子的任何痕迹。
+        //   · 恒等保证（为什么这个改动对"没放残片"的场合逐值不变）：
+        //     ShanhaiParallelBudget.totalParallelLimitFor(x, 1) == max(1L, x) == 改动前的实参，
+        //     对任意 x 成立（加载期自检 [SHANHAI-PARALLEL-BUDGET] 逐档断言它）。
+        //   · 影响面：本行属于【原生链】的 @RecipeModifier，而原生链只有 isGenerator() 那台走
+        //     （bytecode：MutableRecipesLogic.findAndHandleRecipe 在 useMultipleRecipes 为真时走
+        //      findAndHandleMultipleRecipe，其常量池里没有任何 RecipeModifier / fullModifyRecipe 引用）
+        //     ⇒ 另外 23 台一个字节的行为都不变。
+        //   🔴 2026-09-30（同日第二轮）：把预算【先算进一个局部变量】再喂 applyParallel ——
+        //      因为下面 ④ 之后的「并行进 long 档 ⇒ 时长下限 10 tick」必须用**同一个数**判定。
+        //      【为什么用"预算"而不是"实际吃到的并行"】后者被输入量钳位（箱里有多少料 ÷ 每份用量），
+        //      随箱子剩多少跳变；用它会让下限时灵时不灵。预算才是"这台机器的并行档位"。
+        final long parallelBudget = PrimordialModuleMachine.totalParallelLimitFor(
+                module.getCurrentParallel(), module.getCrossRecipeThreads());
+        modified = PrimordialRecipeEffects.applyParallel(modified, module, parallelBudget);
 
         int gateBonus = host == null ? 0 : host.moduleSlotBonus();
 
@@ -1477,6 +1561,48 @@ public final class ModuleRegistry {
         //       与「下限 20」是两件事；f 极小 + 原时长极短时由它兜住 duration=0。
         //    ⚠️ 外层 `min(原时长, …)` 也保留（"时长永不变长"红线；f ≤ 1 时是恒等操作）。
         modified = PrimordialRecipeEffects.applyModuleDuration(modified, durationAtEntry);
+
+        // ④-b 🔴 2026-09-30（同日第二轮）用户拍板：「这个配方加到 long 之后可以加一个最小配方时长为 10 tick，
+        //      然后 jade 写一下提示，这样不会引起误解」。原话逐字留档，见
+        //      {@code PrimordialRecipeEffects#LONG_SCALE_MIN_DURATION} 的 javadoc。
+        //   · 它治的是哪件事：并行进 long 档之后，输入钳位把并行放大到「整箱 ÷ 每份用量」——
+        //     对【原始真空零点能发生器】+【创始现实修改模块】+【创造模式输入仓】这一组，
+        //     一次装配就把整箱 9,223,372,036,854,775,807 mB 扣到只剩 807 mB，而配方时长被上面
+        //     ③④ 压到 **1 tick** ⇒ 下一 tick 就没料 ⇒ 抬头在「在跑」与「未找到配方」之间横跳
+        //     （创造模式输入仓每 5 tick 才回填一次）。抬到 10 tick 后一个料周期跨 2 次回填 ⇒ 不再挨饿。
+        //   · 判据 = 【并行预算 > 2147483647】（原原生链 int 天花板）⇒ 该值就是"进了 long 档"的
+        //     唯一真源定义（{@code ShanhaiParallelBudget.NATIVE_INT_CEILING}）。
+        //     ⚠️ 恒等保证：预算 ≤ 21 亿时本行**逐值不变**（函数第一句就返回入参实例），
+        //        而本行所在的原生链只有 isGenerator() 那台走 ⇒ 另外 23 台连这个方法都不会进。
+        //   · ⛔ 旧口径（作废）：实际生效值 = min(10, 配方原时长) —— 原时长 < 10 的配方不被拖长。
+        //     它撞的是旧红线「任何情况下配方时长都不许超过定义时长」。
+        //   · ✅ 现行口径（用户 2026-09-30 拍板「B. 破一次红线，让那 25 台也抬到 10」）：
+        //     **判据成立 ⇒ 时长下限恒为 10 tick（绝对 10，与"原时长"无关）**。
+        //     🔴 新红线措辞（逐字，见 ShanhaiDurationFloor 类注释）：
+        //        「只有「进了 long 档」（并行预算 > 2,147,483,647）时，配方时长才允许被抬到 10 tick；
+        //          其余一切情形，配方时长仍不许超过配方定义的原时长。」
+        //     ⚠️ 代价（用户明知并接受）：原时长 < 10 的配方在 long 档下比原版慢，最坏 1→10（10 倍）。
+        //     ⚠️ 「绝对 10」= 下限，**不是**"强制等于 10"：本行只抬不砍（60 tick 的配方仍是 60）。
+        //
+        //   ④-c 🔴 2026-09-30（同日第三轮）：用户报「它没有到 10 tick」。定位结论 = 「原时长」这个
+        //      基准取错了源 —— 上面 `durationAtEntry` 取的是【链上第 ② 步之后】读到的
+        //      `modified.duration`，它是**中间产物**；只要链上任何一步让它变成 1，
+        //      旧公式 `min(10, 原时长)` 就退化成 1、本行整条静默失效（而且因为"目标 == 现值"
+        //      连生效日志都不打 ⇒ 看起来像"功能没写"）。
+        //   · ④-c 现在不再承担"取对基准"的职责（新公式根本不读原时长）⇒ 它只做两件事：
+        //     ① 读【配方定义实例】`logic.getLastOriginRecipe()`（GTCEu/gtlcore 自己保留的匹配到的
+        //        原始配方，见 PrimordialModuleMachine 第 1707 行同一个取法）当**诊断值**；
+        //     ② 把「预算 / 链上原时长 / 定义值 / 当前时长 / 目标值」交给一次性现场探针。
+        //     ⇒ 这样即使将来"链上原时长被污染"再发生，时长照抬不误，而探针会把它**记下来**。
+        final com.gregtechceu.gtceu.api.machine.trait.RecipeLogic floorLogic = module.getRecipeLogic();
+        final GTRecipe floorOrigin = floorLogic == null ? null : floorLogic.getLastOriginRecipe();
+        final int floorOriginDuration = (floorOrigin != null && floorOrigin.duration > 0)
+                ? floorOrigin.duration
+                : durationAtEntry;
+        PrimordialRecipeEffects.shanhai$probeDurationFloor(module.getDefinition().isGenerator(),
+                parallelBudget, durationAtEntry, floorOriginDuration, modified.duration);
+        modified = PrimordialRecipeEffects.applyLongScaleDurationFloor(
+                modified, floorOriginDuration, parallelBudget);
 
         // ⑤ 耗能减免（N5 旋钮二，与耗时独立；钳 ≥ 1 EUt。🔴 主机侧同样吃这一步）
         modified = PrimordialRecipeEffects.reduceEnergy(modified, factor);

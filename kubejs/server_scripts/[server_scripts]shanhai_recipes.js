@@ -5,7 +5,7 @@
 // ✅ 2026-09-26 【终版 · FINAL】：本文件原先挂着的问题【三处全部落定】——
 //    ① 新类型「原初物质解构」= `gtceu:primordial_matter_deconstruction`（用户裁决「就用这个」）；
 //    ② `photon_separation` 的 setMaxIOSize 由 (2,4,2,2) **放宽到 (4,10,2,2)**（用户裁决：物品入 2→4、物品出 4→10、流体 2/2 不动）；
-//    ③ 星门 3 条的 EUt 按「**MAX+8** = MAX 电压 + 4^8 A」= **2^47 = 140737488355328**（用户裁决）。
+//    ③ 星门 3 条的 EUt 按「**MAX+8** = MAX 电压 + 4^8 A」= **2^47 = 140737488355328**（用户裁决；条数**现算**）。
 //    ⇒ 后果：**2026-09-26 放宽后不再溢出** —— 原先那 3 条 SLOT-OVER 溢出**已消除**，
 //       代际产物里**既没有 `slotOver` 字段、也没有 SLOT-OVER 告警代码**（整段已删）。
 //    ✅ 2026-09-27：【已部署】到 GTL山海9.10test\kubejs\server_scripts\
@@ -15,19 +15,25 @@
 // 🔴 本次是【增量更新】（用户原话逐字：「这次添加配方就和上次一样啊，上次我还帮你理解了」
 //    ／「每个元件都有新增的配方」）：
 //    · 老那 8 条【原样保留、一个字不改】（它们的 spec 从上一版文件逐字搬过来）；
-//    · 新增 30 条【追加】进同一个文件。
-//    ⇒ 实测（2026-09-27 运行期）：工作台 18 条 + GT 机器 61 条 = 79 条。
+//    · 新增 77 条【追加】进同一个文件。
+//    ⇒ 条数（**本次现算**，不再写死）：工作台 18 条 + GT 机器 68 条 = 86 条。
+//       其中 GT 那 68 条 = 本文件生成的 65 条 ＋ 老配方逐字保留的 3 条。
+//       ⚠️ 工作台那部分 = 文件里硬编码的 6 条 ＋ 从 PF.txt 的「合成样板」现算生成的条数；
+//          两者都在本脚本跑完前才算得出来 ⇒ 上面用了占位符，末尾会回填（并自检"占位符已全部替换"）。
+//       ⚠️ 这里的总数是 `rows.json` 的**最终**条数（已含「土高炉 ⇒ 原始物质重组」那批 14 条副本）；
+//          `样板清单.md` §1 的条数是在**加副本之前**算的（71 条）⇒ 两边数字不同是正常的，不是对不上。
 //
-// 源数据：C:\Users\david\Desktop\PF.txt
-//   SHA256 = 086D2F5E83DB2E390EF42E473EEC7FCE046269BAE691AF17FDC0CBAC83A730F2
-//   41,564 B / 单行 NBT / 一个 minecraft:chest
+// 源数据：PF.txt ← 由环境变量 SH_PF_SRC 指定的那个文件（本仓库不记录机器绝对路径）
+//   SHA256 = D1B9ECC4E720CEFBB667716F9C53ABD67CD6D45FCA111E42CB3A16C610DA47B3
+//   79212 B / 单行 NBT / 一个 minecraft:chest
+//   ⚠️ 以上两行**每次生成时现读现算**（原先写死的是 2026-09-26 那版的值，早就对不上了）。
 //
 // =============================================================================
 // §0 检查器自证（先说清"我凭什么信自己没看漏"）
 // =============================================================================
-//  · `ae2:processing_pattern` 纯文本出现次数 = 38
-//  · 逐条解析成功 = 38     ⇒ 两边相等，无静默漏条
-//  · `in` 恒为 81 格 / `out` 恒为 27 格（AE2 定长数组，空槽是 `{}`）—— 79/79 条都对
+//  · `ae2:processing_pattern` 逐条解析成功 = 85
+//  · `in` 恒为 81 格 / `out` 恒为 27 格（AE2 定长数组，空槽是 `{}`）—— 85/85 条都对（格数为**现算**：取 rows 第一行的长度）
+//  · 原文里的纯文本出现次数 = 71，逐条解析成功 = 71 ⇒ **两边相等，无静默漏条**
 //  · 正面对照：解析出的 8 条旧配方与上一版文件头 §3 的记录【逐字一致】
 //    ⇒ 说明解析器看的是同一批东西（这是"解析器自己是对的"的证据，不是自说自话）
 //
@@ -36,34 +42,38 @@
 // =============================================================================
 //   本次 Slot | 元件名（display.Name 逐字） | 本次条数 | 上次 | 差
 //   ----------|---------------------------|---------|------|----
-//   Slot 0    | 处理样板-星门(MAX+16)      |    3    | 无   | 全新元件
-//   Slot 1    | 合成样板                   |    5    | 17   | +12 ← 2026-09-27 改为从 PF.txt 全量生成
-//   Slot 2    | 处理样板ULV                |   19    | 1    | +18
-//   Slot 3    | 处理样板LV                 |   11    | 2    | +9
+//   Slot 0    | 处理样板-星门(MAX+16)     | 3       | 无   | 全新元件
+//   Slot 1    | 合成样板                  | 17      | 5    | +12
+//   Slot 2    | 处理样板ULV               | 34      | 1    | +33
+//   Slot 3    | 处理样板LV                | 15      | 2    | +13
+//   Slot 4    | 处理样板MV                | 16      | 无   | 全新元件
 //   ----------|---------------------------|---------|------|----
-//   合计      |                            |   38    | 8    | +30
+//   合计      |                           | 85      | 8    | +77
 //
-//  ⚠️ 与用户口径的一处出入（如实报，不顺着说）：用户说「每个元件都有新增的配方」，
-//     ⚠️ 2026-09-27 更正：本句【已过期】。用户更新 PF.txt 后合成样板 = 17 条，
-//  ⚠️ 元件【槽位变了】：上次 Slot 0 = 处理样板ULV、Slot 2 = 处理样板LV；
-//     这次整体后移（ULV→Slot 2，LV→Slot 3），Slot 0 换成了新元件。
-//     判据：条数与内容吻合（ULV 里仍含旧 ①、LV 里仍含旧 ⑦⑧）⇒ 是同一个元件被挪了槽，不是新元件。
+//  ⚠️ 「上次」那一列来自 `LAST_PF`（上一版 PF.txt 的历史留档 —— 旧源文件已被覆盖，算不出来）。
+//     本次那一列与差值都是**现算**的。
+//  ⚠️ 元件【槽位】：本次 {"处理样板-星门(MAX+16)":0,"合成样板":1,"处理样板ULV":2,"处理样板LV":3,"处理样板MV":4}；上次 {"处理样板ULV":0,"合成样板":1,"处理样板LV":2} ⇒ 槽位是否后移，按这两组数自己对（本文件不替用户下结论）。
 //
 // =============================================================================
 // §2 中文名 → `gtceu:<id>` 映射（口径沿用上次：lang 里【唯一精确等于】那条）
 // =============================================================================
-//   纸上中文名     | gtceu id                            | 来源          | 条数
+//   纸上中文名     | gtceu id                            | 来源          | 条数（现算）
 //   ---------------|-------------------------------------|---------------|-----
-//   电路组装机     | gtceu:circuit_assembler             | gtceu zh_cn   |  1
-//   土高炉         | gtceu:primitive_blast_furnace       | gtceu zh_cn   | 14
-//   量子化现实重构 | gtceu:spacetime_distortion          | shanhai zh_cn |  3
-//   原初奇点反演   | gtceu:primordial_singularity_inversion | shanhai zh_cn | 3
-//   物质流凝结     | gtceu:matter_flow_condensation      | shanhai zh_cn |  2
-//   物质模块铸造   | gtceu:matter_module_casting         | shanhai zh_cn |  2
-//   光子虹吸       | gtceu:photon_siphon                 | shanhai zh_cn |  2
-//   光子分离       | gtceu:photon_separation             | shanhai zh_cn |  3
-//   星际物质吸取   | gtceu:interstellar_matter_absorption| shanhai zh_cn |  1
-//   ✅世线电路板组装| gtceu:wl_board_circuit_assembly       | shanhai zh_cn |  2
+//   原初物质重组    | gtceu:primordial_matter_recombination | shanhai zh_cn | 19
+//   土高炉          | gtceu:primitive_blast_furnace         | gtceu zh_cn   | 14
+//   原初奇点反演    | gtceu:primordial_singularity_inversion| shanhai zh_cn | 8
+//   光子分离        | gtceu:photon_separation               | shanhai zh_cn | 7
+//   世线电路板组装  | gtceu:wl_board_circuit_assembly       | shanhai zh_cn | 3
+//   物质模块铸造    | gtceu:matter_module_casting           | shanhai zh_cn | 3
+//   物质流凝结      | gtceu:matter_flow_condensation        | shanhai zh_cn | 3
+//   量子化现实重构  | gtceu:spacetime_distortion            | shanhai zh_cn | 3
+//   光子虹吸        | gtceu:photon_siphon                   | shanhai zh_cn | 2
+//   星际物质吸取    | gtceu:interstellar_matter_absorption  | shanhai zh_cn | 2
+//   世线采样        | gtceu:worldline_sampling              | shanhai zh_cn | 1
+//   世线震荡收集    | gtceu:worldline_oscillation_collection| shanhai zh_cn | 1
+//   原初世线切割    | gtceu:worldline_cutting               | shanhai zh_cn | 1
+//   电路组装机      | gtceu:circuit_assembler               | gtceu zh_cn   | 1
+//   ⇒ 纸上出现过的配方类型共 14 种，合计 68 条（= 全部带类型的样板）。
 //
 //  ✅ 已消除的唯一歧义：纸上写「世线电路板组装」，lang 里是「世线板电路组装」——
 //     用户 2026-09-26 亲自裁决：「我写错了」⇒ 按 lang 的 `gtceu:wl_board_circuit_assembly` 落，
@@ -72,15 +82,16 @@
 // =============================================================================
 // §3 配方类型 id 的存在性核实（正面对照，不是猜）
 // =============================================================================
-//  · 8 个 shanhai 类型：解 `mods\shanhai-0.1.0.jar` 的
-//      `com/shanhai/common/recipe/ShanhaiRecipeTypes.class` 常量池，**逐个命中**：
-//      spacetime_distortion / primordial_singularity_inversion / matter_flow_condensation /
-//      matter_module_casting / photon_siphon / photon_separation /
-//      interstellar_matter_absorption / wl_board_circuit_assembly  ⇒ **8/8 在**。
+//  · **shanhai 类型总数 = 44**（**现算**：读真源① `shanhai-rewrite\src\main\java\com\shanhai\common\recipe\ShanhaiRecipeTypes.java`
+//      的【活代码】`.setMaxIOSize(...)` 条数，与同文件常量 `REAL_TYPE_COUNT = 44` 互为自证；
+//      注释作废块里另有 24 条，已按"行首是注释符"剔除。）
+//  · 上述类型的 id 存在性由加载期断言 G3 保证（CAP 的每个键都必须能追溯到真源①或真源②），
+//      追不到就抛错、**拒绝写产物** —— 所以"存在性"不是靠这里手写一段话，是靠不通过就出不来。
+//  · 历史抽检样本（2026-09-26 抽的那 8 个）本次**现查**：spacetime_distortion / primordial_singularity_inversion / matter_flow_condensation / matter_module_casting / photon_siphon / photon_separation / interstellar_matter_absorption / wl_board_circuit_assembly ⇒ **8/8 在**。
 //  · gtceu:primitive_blast_furnace：游戏自己的导出表
-//      `local\kubejs\export\recipes\gtceu\primitive_blast_furnace\` = **18 个配方文件**
+//      `local\kubejs\export\recipes\gtceu\primitive_blast_furnace\` = **18 个配方文件**（**现算**：数该目录下的 `*.json`）
 //      ⇒ 这个配方类型在本包里**真实存在且有配方**。
-//  · gtceu:circuit_assembler：同目录下有 **90** 个配方文件。
+//  · gtceu:circuit_assembler：同目录下有 **90** 个配方文件（**现算**）。
 //  · ⚠️ 反例（防"假否定"）：`local\kubejs\export\registries\item.json` 时间戳 = 2026-09-10 19:19，
 //      **早于** shanhai-0.1.0.jar（2026-09-26 11:11）⇒ 那张导出表里 `gtceu:spacetime_distortion` 
 //      之类的目录**查不到**。这【不是"不存在"】，是"导出表过时"。
@@ -90,22 +101,66 @@
 // §4 槽位核对（用 jar 里【真的】setMaxIOSize 值，不是估的）
 // =============================================================================
 //  shanhai 类型：ShanhaiRecipeTypes.java 的 .setMaxIOSize(物品入,物品出,流体入,流体出)：
+//     primordial_power_generator         = (2, 2, 2, 2)
+//     primordial_stellar_reaction        = (5, 3, 5, 3)
+//     primordial_biological_core         = (6, 3, 3, 3)
+//     primordial_matter_recombination    = (12, 3, 6, 3)
+//     primordial_causal_weaving          = (12, 3, 6, 3)
+//     primordial_singularity_inversion   = (12, 3, 6, 3)
+//     taixu_smelting                     = (2, 2, 1, 1)
+//     worldline_oscillation_collection   = (16, 2, 4, 2)
+//     interstellar_matter_absorption     = (2, 2, 2, 2)
+//     matter_flow_condensation           = (4, 2, 2, 2)
+//     primordial_energy_absorption       = (1, 2, 2, 2)
+//     photon_separation                  = (4, 10, 2, 2)
+//     matter_module_casting              = (17, 1, 4, 0)
+//     matter_forging                     = (9, 1, 1, 0)
+//     primordial_matter_deconstruction   = (1, 103, 1, 16)
+//     wl_board_circuit_assembly          = (9, 3, 6, 4)
+//     wl_board_wafer_etching             = (6, 3, 4, 3)
+//     proxy_execution                    = (0, 0, 0, 0)
+//     coin_forge                         = (9, 6, 6, 3)
+//     nine_industrial                    = (24, 24, 12, 12)
+//     black_hole_event_horizon_blast     = (3, 9, 3, 6)
+//     black_hole_neutronium_compressor   = (9, 6, 6, 5)
+//     black_hole_compressor              = (9, 6, 6, 5)
+//     high_dimensional_fragment_cutting  = (4, 9, 2, 4)
+//     worldline_cutting                  = (6, 6, 4, 4)
+//     worldline_sampling                 = (3, 12, 3, 6)
+//     worldline_matter_recurrence        = (9, 6, 6, 3)
+//     worldline_probability_cracking     = (6, 9, 4, 4)
+//     photon_siphon                      = (4, 2, 2, 2)
+//     zero_point_conversion              = (2, 2, 2, 2)
+//     matter_aggregation                 = (2, 2, 0, 0)
+//     gravitational_wave_consumption     = (1, 0, 1, 0)
+//     tianjie_navigation                 = (6, 3, 6, 3)
+//     nebula_siphoning                   = (6, 3, 6, 3)
+//     chaos_crafting                     = (24, 24, 12, 12)
+//     seventy_two_changes                = (1, 1, 0, 0)
+//     gravitational_wave_production      = (2, 2, 2, 2)
+//     primordial_myriad_ascension_tier_1 = (4, 0, 4, 0)
+//     primordial_myriad_ascension_tier_2 = (4, 0, 4, 0)
+//     kmyy                               = (2, 1, 0, 0)
+//     spacetime_distortion               = (9, 6, 6, 5)
+//     primordial_laser_etching           = (3, 1, 1, 0)
+//     primordial_swarm_casting           = (6, 1, 3, 0)
+//     primordial_matter_forming          = (6, 1, 1, 0)
 //     circuit_assembler                  = (6, 1, 1, 0)
 //     primitive_blast_furnace            = (3, 3, 0, 0)
-//     spacetime_distortion               = (9, 6, 6, 5)
-//     primordial_singularity_inversion   = (12, 3, 6, 3)
-//     matter_flow_condensation           = (4, 2, 2, 2)
-//     matter_module_casting              = (17, 1, 4, 0)
-//     photon_siphon                      = (4, 2, 2, 2)
-//     photon_separation                  = (4, 10, 2, 2)
-//     interstellar_matter_absorption     = (2, 2, 2, 2)
-//     wl_board_circuit_assembly          = (9, 3, 6, 4)
+//
+//  上表 = 【真源现读现算】的结果（2026-09-29 起），不再手抄：
+//    真源① shanhai 类型 ⇒ shanhai-rewrite\src\main\java\com\shanhai\common\recipe\ShanhaiRecipeTypes.java
+//        的【活代码】`.setMaxIOSize(a,b,c,d)`（行首是注释符的作废块会被剔除）。
+//    真源② gtceu 原生类型 ⇒ recipe-convert\javap\GTRecipeTypes.txt（已部署 gtceu jar 的 javap -c 转储）。
+//    ⇒ 键集合若与真源对不上，生成器**抛错并拒绝写产物**（双向断言：缺键 / 多键 / 用到的类型查不到）。
 //  · gtceu:primitive_blast_furnace = (3, 3, 0, 0)
 //      —— 出处：gtceu jar `GTRecipeTypes.class` 字节码偏移 3028-3032：
 //         iconst_3 / iconst_3 / iconst_0 / iconst_0 → setMaxIOSize
-//      ⚠️ 流体入=0 流体出=0 ⇒ 土高炉配方【不许带流体】，本文件 14 条土高炉确实一条流体都没有 ✓
-//      ⚠️ 18 条现存 primitive_blast_furnace 配方的实测最大值是 (2,2,0,0)（没填满 3）
-//  · gtceu:circuit_assembler = (6, 1, 1, 0)（上一版已核，出处见上一版 §1）
+//      ⚠️ 流体入=0 流体出=0 ⇒ 土高炉配方【不许带流体】，本文件 14 条土高炉确实一条流体都没有 ✓（条数**现算**：数 specs 里 type=primitive_blast_furnace 的条数）
+//      ⚠️ 导出表里现有 18 条 primitive_blast_furnace 配方，其实测最大值是 (2,2,0,0)（没填满 3）——**历史值 2026-09-26**，需扫导出表 JSON 才能现算；文件数已现算，括号里的最大值请连日期一起引。
+//  · gtceu:circuit_assembler = (6, 1, 1, 0)
+//      —— 出处：同一份转储偏移 2308-2313：bipush 6 / iconst_1 / iconst_1 / iconst_0 → setMaxIOSize
+//      ⚠️ 上面两条的数值结论已由本表（现读现算）给出，这里只留取证过程，不再复写一份数字。
 //
 //  🔴 三条占用规则（沿用上次口径，**没变**）：
 //     · `.notConsumable(...)`【占】1 个物品输入槽（和普通输入一样算）
@@ -113,13 +168,18 @@
 //     · 物质模块【等级门槛】不占槽（它是准入判据，不是输入物）
 //  ⇒ 每条新增配方都算过 slotIn / slotOut，逐条结果见 §7 的表。
 //
-//  🔴🔴 槽位核对【曾查出 3 条溢出】—— ✅ **本版已由用户裁决解决**：
+//  🔴🔴 槽位核对【曾查出 7 条溢出】—— ✅ **本版已由用户裁决解决**：
+//    （下表**按本次 specs 现算**，行号/条数都不写死）
 //
-//    PF.txt#  | 配方 id 后缀               | 类型               | 物品入 | 旧 cap | 新 cap
-//    ---------|---------------------------|--------------------|--------|--------|-------
-//    #31      | shanhai:pf/photon_2       | photon_separation  |   3    |  2 ❌  |  4 ✓
-//    #33      | shanhai:pf/electron       | photon_separation  |   3    |  2 ❌  |  4 ✓
-//    #36      | shanhai:pf/photon_rainbow | photon_separation  |   3    |  2 ❌  |  4 ✓
+//    PF.txt#  | 配方 id                    | 类型               | 物品入 | 旧 cap | 新 cap
+//    ---------|----------------------------|--------------------|--------|--------|-------
+//    #45      | shanhai:pf/photon_rainbow  | photon_separation  | 3      | 2 ❌    | 4 ✓
+//    #47      | shanhai:pf/photon_2        | photon_separation  | 3      | 2 ❌    | 4 ✓
+//    #51      | shanhai:pf/electron        | photon_separation  | 3      | 2 ❌    | 4 ✓
+//    #59      | shanhai:pf/up_quark        | photon_separation  | 3      | 2 ❌    | 4 ✓
+//    #60      | shanhai:pf/down_quark      | photon_separation  | 3      | 2 ❌    | 4 ✓
+//    #63      | shanhai:pf/down_quark_2    | photon_separation  | 3      | 2 ❌    | 4 ✓
+//    #71      | shanhai:pf/up_quark_2      | photon_separation  | 3      | 2 ❌    | 4 ✓
 //
 //    三条都是同一形状：1~2 个真物品 + 1 个 notConsumable(力场发生器) + 1 个 .circuit(1) = 3 格，
 //    而旧 photon_separation 的 setMaxIOSize 是 (2,4,2,2) ⇒ 物品入只有 2 格。
@@ -148,31 +208,93 @@
 // §6 🔴 改名纸 = 注记，不是配方输入（沿用上次口径）
 // =============================================================================
 //  ⇒ 本文件【任何地方都不出现 minecraft:paper】—— 除非它是**没改名的真产物**
-//    （本次确实有一条：#25「甘蔗 → 2x minecraft:paper」是真的出纸，那条保留）。
+//    （本次确实有 2 条：#26 / #75「产出 minecraft:paper」是真的出纸，那些保留）。
 //  · 纸有三种：
 //      ① 「配方类型：XXX」（也有裸写类型名的，如「光子虹吸」「电路组装机」）⇒ 决定用哪台机器
 //      ② 「Ns」⇒ 决定耗时（×20 = tick）
-//      ③ 备注（本次三种：物质模块是催化剂 / 力场发生器是催化剂 / 电子中微子产出概率5%）
-//  · 🔴 纸写在 in 里，也可能写在 **out** 里 —— #33 的「电子中微子产出概率5%」就在 out[3]。
+//      ③ 备注（本次四种：物质模块是催化剂 57 条 / 力场发生器是催化剂 3 条 / 夸克释放催化剂作为催化剂 2 条 / 电子中微子产出概率5% 1 条）
+//         ⚠️ 上面每个数都是【行数】不是【纸数】：rows.json 里含「原初物质重组 ⇒ 土高炉」的副本行，
+//            同一张纸会被算多行 ⇒ 例如「物质模块是催化剂」纸面只有 43 张、这里会显示 57 行。
+//  · 🔴 纸写在 in 里，也可能写在 **out** 里 —— #51（1 条）的「电子中微子产出概率5%」就在 out[3]。
 //    本文件把"带自定义名的纸"从 out 里剔除，只留真产物。
 //
 // =============================================================================
 // §7 🔴 三处口径（**先报出来，没自己选**）：
 // =============================================================================
-//  ①「物质模块是催化剂」—— 27 条样板里有这张纸。
-//     ✅ 用户 2026-09-26 裁决（原话逐字）：「以后物质模块是催化剂指的都是我们今天刚写好的机制」
-//     ⇒ 「物质模块是催化剂」= 今天刚做好的【等级门槛 ModuleLevelCondition】，不再是老写法。
-//       · 新机制（等级门槛，**唯一口径**）： .addCondition(new ModuleLevelCondition('shanhai:<模块>', 1))  ← 不占槽
-//       · 老写法（催化剂）： .notConsumable('Nx shanhai:<模块>')                                  ← 占 1 槽
+//  ①物质模块怎么落 —— 🔴🔴 2026-09-28 用户规则 ＋ 🔴🔴 2026-10-01 判据修正（**后者覆盖前者的适用面**）
+//     ✅ 用户 2026-09-28 原话（逐字）：
+//        「有些配方的物质模块的配置错了，目前，注意是目前只有制作物质模块和世线的配方才需要消耗物质模块」
+//     ✅ 用户 2026-10-01 原话（逐字，**本次修正**）：
+//        · 「那条配方的模块」⇒ 选「B. 等级门槛（不烧、但要挂）」
+//        · 「世线残片其余 6 档 ＋ 寰宇并行超限器」⇒ 选「A. 还没写，以后补」⇒ **不许动**
+//     ⇒【应当消耗】物质模块的配方只有两类：
+//         ⓐ 制作物质模块 —— 该配方的【产出】里有【物质模块】（如 shanhai:basic_material_module）
+//         ⓑ 世线的配方   —— 该配方【类型】属于世线族（gt id 判定）：
+//              worldline_oscillation_collection / worldline_cutting /
+//              worldline_matter_recurrence / worldline_probability_cracking
+//            ⚠️ 2026-09-29 用户裁决：「世线采样是合成世线晶核的，是一个准备工作，不是真正的制作世线，
+//               所以不需要消耗物质模块」⇒ `worldline_sampling` 已从世线族【拿掉】（原 5 个 ⇒ 现 4 个）。
+//               ⇒ 采样配方（若有物质模块输入）落"等级门槛"，不再消耗；
+//                 当前 PF.txt 第 64 条采样配方输入里没有物质模块 ⇒ 该条配方落法不变。
+//        ⇒ 这两类里，物质模块就是**普通输入，照常被消耗**（`.itemInputs(...)`，不挂催化剂、不设门槛）。
+//     🔴🔴 2026-10-01 判据修正（**本次唯一改动，用户拍板"采用 B"**）：
+//        把"世线族 ⇒ 消耗"这条**再加一层** —— **看【产出】是不是「残片族」**：
+//          · 产出 ∈ 残片族（thread_shard_1..7 ／ universal_parallel_overdriver）⇒ **不消耗**（落等级门槛）
+//          · 产出 ∉ 残片族                                      ⇒ 照旧**消耗**
+//        🔑 为什么必须看产出：`worldline_cutting`（原初世线切割）这个【类型】同时命中"世线族"，
+//           但它产出的 `thread_shard_1`（世线残片·初醒）属于**「世线的运用」**、不是「世线本体」
+//           ⇒ 只按类型判就会把"运用"当"本体"烧掉 —— **那正是用户报的那个 bug**。
+//        用户 2026-09-26 亲自定的区分（逐字）：「世线残片 7 档（初醒→裁决）是【世线的运用】…」
+//                                       ＋「世线本体 = 世线碎片·核心那一族」
+//        ✅ 真源 = `ShanhaiConcurrencyTables.SHARD_EXPONENTS` 的 8 个键（**不新造清单**）。
+//        ✅ 自证（负面对照）：**世线震荡收集**产出的 `dimensional_worldline_fragment`（维度世线碎片）
+//           = **世线本体** ⇒ 不命中本层 ⇒ **保持消耗** ✓（用户 2026-10-01 复述确认了这一点）。
+//     🔴 2026-09-28 用户裁决（第一条）：**`wl_board_circuit_assembly`（世线板电路组装）与
+//        `wl_board_wafer_etching`（世线晶圆蚀刻）【不算"世线族"】**。
+//        ⇒ 它们从 WORLDLINE_TYPES 里【已拿掉】；凡这两个类型的配方，物质模块一律**不消耗**，
+//          按现有机制落（两者都是山海自己的类型 ⇒ 等级门槛；纸上写着「物质模块是催化剂」的与之一致）。
+//     🔴 「什么算物质模块」以【权威 17 项表】为准，**不是**正则匹配名字：
+//        出处 = `com/shanhai/machine/module/PrimordialModuleMachine.MODULE_LEVELS`（17 项，等级 1..17），
+//        与 lang 的 `shanhai.recipe.fail.module_level.unresolved`「…不在 17 个物质模块表里」同一口径。
+//        ⚠️ 其中 6 个 id 并不以 `material_module` 结尾（material_deduction_module /
+//           material_recombination_module / imaginary_material_transition_remolding_module /
+//           material_creation_module / reality_anchor_module / genesis_reality_modification_module）
+//           ⇒ 任何"按名字正则"的写法都会漏掉它们（本生成器 2026-09-28 之前就是这么漏的）。
+//     ⇒【不消耗】其余所有含物质模块的配方：
+//         · 山海自己注册的配方类型 ⇒ 落【等级门槛 ModuleLevelCondition】  .addCondition(new ModuleLevelCondition(...))
+//         · 不是山海的机器（gtceu 原生的 primitive_blast_furnace 等）⇒ `.notConsumable('Nx shanhai:<模块>')`
+//     🔴 与 2026-09-26 那版的关键差别（这就是用户说的"配置错了"的根因）：
+//        旧版**只在纸上写了「物质模块是催化剂」时才特殊处理**；纸【没写】的样板 ⇒ 物质模块留在 itemInputs 里
+//        被**正常消耗**。⇒ 本次把判据从"看纸"改成"看产出与配方类型"。
+//     📌 留档（被本版覆盖的旧口径，2026-09-26 用户原话逐字）：
+//        「以后物质模块是催化剂指的都是我们今天刚写好的机制」
+//        ⇒ 当时的口径是「纸上写=等级门槛」，并给 `primitive_blast_furnace` 单开一张 NO_GATE_TYPES 白名单。
+//        那张白名单**已被显式正向表 SHANHAI_TYPES / WORLDLINE_TYPES 取代**（生成器里可查）。
 //     · 已取证：`mods\shanhai-0.1.0.jar` 里 **存在** 
-//       `com/shanhai/machine/module/ModuleLevelCondition.class` ⇒ 上一版"待落地"的状态已结束。
-//     · 本文件的做法：**默认走等级门槛**；`SHANHAI_PF_MODULE_MODE` 一行可切。
+//       `com/shanhai/machine/module/ModuleLevelCondition.class` ⇒ 门槛机制可挂。
+//     · 本文件的做法：门槛形态由 `SHANHAI_PF_MODULE_MODE` 一行可切（'gate' 默认 ／ 'catalyst' 全退催化剂）。
 //       ⚠️ 降级通道【保留】（jar 没绑 / `typeof` 判不到类时自动退回催化剂，配方不会消失）。
-//     · ⚠️ 另有 3 条（PF.txt #1/#2/#3）有这张纸却【没有物质模块物品】⇒ 门槛无从挂起，
+//     · ⚠️ 另有 0 条样板有「物质模块是催化剂」这张纸却【没有物质模块物品】⇒ 门槛无从挂起，
+//       （上面这个数是按本次 specs 的 flags **现算**的；纸写「物质模块是催化剂」的样板共 57 条：1 / 2 / 3 / 21 / 22 / 23 / 24 / 26 / 27 / 28 / 29 / 30 / 31 / 34 / 35 / 36 / 37 / 38 / 39 / 40 / 42 / 43 / 44 / 45 / 46 / 47 / 48 / 49 / 50 / 51 / 52 / 54 / 56 / 58 / 59 / 60 / 63 / 64 / 66 / 67 / 69 / 70 / 71 / 72 / 73 / 74 / 75 / 76 / 77 / 78 / 79 / 80 / 81 / 82 / 83 / 84 / 85）
 //       本文件按"无门槛无催化剂"落，并在脚本里逐条注明。
-//  ②「力场发生器是催化剂」—— 3 条（#31/#33/#36），每条同格就有 `gtceu:lv_field_generator`。
+//  ②「力场发生器是催化剂」—— #45 / #47 / #51（3 条），每条同格就有 `gtceu:lv_field_generator`。
 //       本文件按 `.notConsumable('1x gtceu:lv_field_generator')` 落。**待确认电压档（LV？）**
-//  ③「电子中微子产出概率5%」—— 1 条（#33），且写在该样板的 **out[3]**，紧邻 out[2] 的
+//       ⚠️⚠️ 2026-09-30 现查出的**已知脆弱点（本次没改，仅报出）**：
+//          这条规则在代码里是【硬编码 LV】的 —— 判据写死成 `it.id === 'gtceu:lv_field_generator'`。
+//          本次 3 条命中的确实都是 LV，所以落法正确；但**换一台 MV/HV 力场发生器就会静默不生效**
+//          （物品照常被消耗、且不报错）。旁证：PF 第 58 条用的是 `gtceu:mv_field_generator`，
+//          它身上没有这张纸所以没暴露。⇒ 建议改成"凡 `*_field_generator` 且纸写了这句 ⇒ 催化剂"。
+//          我没动它：那会改变 58 条吗？不会（它没这张纸）—— 但它属于「扩大规则覆盖面」，
+//          按本轮硬要求②（改数值/口径要停下报）留给你裁决。
+//  ④「夸克释放催化剂作为催化剂」—— #60 / #71（2 条）（**本轮新增支持**）
+//       纸面原文逐字：「夸克释放催化剂作为催化剂」（**末尾没有句号**）。
+//       ⇒ 本文件按 `.notConsumable('<纸上那个数量>x shanhai:<上|下>_quark_emission_catalyst')` 落，
+//          **数量照纸上一字未改**（本次两条都是 64）；本轮只改"消不消耗"，一个数字都没动。
+//       🔴 本轮之前这句话【一个字都没被读到】⇒ 那 64 个按普通材料落进 itemInputs 被吃掉。
+//          取证：把 PF 副本里这句话改名后重跑，specs 的**配方形状差异 = 0** ⇒ 反证"当前完全没读"。
+//       ⚠️ 只对**纸上写了这句话**的配方生效 ⇒ 第 59 / 63 条（同样有 ×1 夸克释放催化剂，
+//          但纸上没有这句话）保持原样：仍在 itemInputs 里被消耗。这个不对称**留给你裁决**。
+//  ③「电子中微子产出概率5%」—— #51（1 条），且写在该样板的 **out[3]**，紧邻 out[2] 的
 //       `shanhai:electron_neutrino`。
 //     ✅ 用户 2026-09-26 裁决（原话逐字）：「吃加成」
 //     ⇒ 本文件落 `.chancedOutput('1x shanhai:electron_neutrino', 500, 100)`
@@ -201,7 +323,7 @@
 //          if (tierDiff <= 0) return chance;          // 没超频 ⇒ 原始概率，吃不到加成
 //          if (recipeTier == 0) tierDiff = tierDiff - 1;
 //          return chance + tierChanceBoost * tierDiff;
-//        ⇒ #33 的 recipeTier = LV(1)，实际概率随机器超频：
+//        ⇒ #51（1 条）的 recipeTier = LV(1)，实际概率随机器超频：
 //            LV(1) → 5% ／ MV(2) → 6% ／ HV(3) → 7% ／ EV(5) → 9% ／ MAX(14) → 18%
 //          （公式里没有封顶，但 `maxChance` = 10000 = 100% 就是天花板）
 //
@@ -255,7 +377,8 @@
 //     ⇒ 上一版因此只能把 EUt 写成 V[MAX] = 2147483648（只放电压部分），安培不放进 EUt。
 //     ⇒ 改成 4^8 后该约束消失，故本版把 2^47 整体写进 EUt。
 //
-//  · 「合成样板」的 5 条是工作台配方（event.shaped，有序），摆位 = in 下标 0..8 行优先 ——
+//  · 「合成样板」的 6 条是工作台配方（event.shaped，有序），摆位 = in 下标 0..8 行优先 ——
+//      （条数用占位符回填**现算**：SHAPED 数组在本脚本后半段才建出来；原先是写死的 5，而实际是 6。）
 //      这是上次已由用户核对确认的口径（原话「这下对了」），本次**一个字没改**。
 //
 // =============================================================================
@@ -293,7 +416,7 @@ var shanhaiUseLevelGate = function (r) {
 
 // -----------------------------------------------------------------------------
 // 老 ①..⑧ 里的 ②③④⑤⑥：工作台配方（有序 shaped）
-// 🔴 与上一版【逐字相同】，本次未改动（用户口径：老 8 条保留不动）
+// 🔴 与上一版【逐字相同】，本次未改动（用户口径：老 8 条保留不动；条数**现算**）
 // 摆位 = PF.txt 该样板 in 数组下标 0..8 按【行优先】
 // -----------------------------------------------------------------------------
 var shanhaiPfShaped = [
@@ -530,7 +653,7 @@ var shanhaiPfShaped = [
 ]
 
 // -----------------------------------------------------------------------------
-// 老 ①⑦⑧（3 条，与上一版【逐字相同】，本次未改动）+ 新增 30 条
+// 老 3 条 GT（①⑦⑧，与上一版【逐字相同】，本次未改动）+ 新增 65 条（条数现算）
 // 每条上面第一行注释 = 溯源：PF.txt 里的序号 / 元件 / 纸
 // -----------------------------------------------------------------------------
 var shanhaiPfGt = [
@@ -595,7 +718,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 1 条（本次新增）｜元件「处理样板-星门(MAX+16)」｜纸：类型「量子化现实重构」／耗时「3s」｜输出 1x shanhai:test_item + 1x shanhai:test_dynamic_text + 1x shanhai:zwf
-    // 🔴 纸写「物质模块是催化剂」，但该样板里【没有】任何物质模块物品 ⇒ 催化剂无从挂起，本条按"无催化剂"落。
+    // 🧪 物质模块【不消耗·等级门槛】：类型 spacetime_distortion 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 17，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     // 🔴 元件「处理样板-星门」：用户最新裁决（原话逐字）「溢出那就算了，改成 max+8=max,4^8A」
     //    ⇒ **MAX+8 = MAX 电压 + 4^8 安培**。
     //    独立验算：V[MAX] = 2147483648（= 2^31，jar 字节码真值）；4^8 = 2^16 = 65536
@@ -607,7 +730,9 @@ var shanhaiPfGt = [
         type: 'spacetime_distortion',
         circuit: 30,
         notConsumable: [],
-        itemInputs: ['1x minecraft:cobblestone', '1x shanhai:genesis_reality_modification_module'],
+        moduleLevelRequirement: '1x shanhai:genesis_reality_modification_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:genesis_reality_modification_module',
+        itemInputs: ['1x minecraft:cobblestone'],
         inputFluids: [],
         itemOutputs: ['1x shanhai:test_item', '1x shanhai:test_dynamic_text', '1x shanhai:zwf'],
         outputFluids: [],
@@ -617,7 +742,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 2 条（本次新增）｜元件「处理样板-星门(MAX+16)」｜纸：类型「量子化现实重构」／耗时「3s」｜输出 1x gtceu:creative_chest
-    // 🔴 纸写「物质模块是催化剂」，但该样板里【没有】任何物质模块物品 ⇒ 催化剂无从挂起，本条按"无催化剂"落。
+    // 🧪 物质模块【不消耗·等级门槛】：类型 spacetime_distortion 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 17，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     // 🔴 元件「处理样板-星门」：用户最新裁决（原话逐字）「溢出那就算了，改成 max+8=max,4^8A」
     //    ⇒ **MAX+8 = MAX 电压 + 4^8 安培**。
     //    独立验算：V[MAX] = 2147483648（= 2^31，jar 字节码真值）；4^8 = 2^16 = 65536
@@ -629,7 +754,9 @@ var shanhaiPfGt = [
         type: 'spacetime_distortion',
         circuit: 32,
         notConsumable: [],
-        itemInputs: ['1x minecraft:cobblestone', '1x shanhai:genesis_reality_modification_module'],
+        moduleLevelRequirement: '1x shanhai:genesis_reality_modification_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:genesis_reality_modification_module',
+        itemInputs: ['1x minecraft:cobblestone'],
         inputFluids: [],
         itemOutputs: ['1x gtceu:creative_chest'],
         outputFluids: [],
@@ -639,7 +766,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 3 条（本次新增）｜元件「处理样板-星门(MAX+16)」｜纸：类型「量子化现实重构」／耗时「3s」｜输出 1x shanhai:primordial_debug_module
-    // 🔴 纸写「物质模块是催化剂」，但该样板里【没有】任何物质模块物品 ⇒ 催化剂无从挂起，本条按"无催化剂"落。
+    // 🧪 物质模块【不消耗·等级门槛】：类型 spacetime_distortion 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 17，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     // 🔴 元件「处理样板-星门」：用户最新裁决（原话逐字）「溢出那就算了，改成 max+8=max,4^8A」
     //    ⇒ **MAX+8 = MAX 电压 + 4^8 安培**。
     //    独立验算：V[MAX] = 2147483648（= 2^31，jar 字节码真值）；4^8 = 2^16 = 65536
@@ -651,7 +778,9 @@ var shanhaiPfGt = [
         type: 'spacetime_distortion',
         circuit: 31,
         notConsumable: [],
-        itemInputs: ['1x minecraft:cobblestone', '1x shanhai:genesis_reality_modification_module'],
+        moduleLevelRequirement: '1x shanhai:genesis_reality_modification_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:genesis_reality_modification_module',
+        itemInputs: ['1x minecraft:cobblestone'],
         inputFluids: [],
         itemOutputs: ['1x shanhai:primordial_debug_module'],
         outputFluids: [],
@@ -661,6 +790,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 21 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 3x minecraft:fire_charge
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/fire_charge',
         type: 'primordial_matter_recombination',
@@ -678,6 +808,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 22 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 1x gtceu:annealed_copper_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -695,6 +827,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 23 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 1x gtceu:conductive_alloy_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -712,6 +846,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 24 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 1x gtceu:compressed_fireclay
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -729,6 +865,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 26 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 2x minecraft:paper
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -746,6 +884,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 27 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 4x gtceu:tin_alloy_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -763,6 +903,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 28 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 2x gtceu:red_alloy_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -780,6 +922,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 29 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 4x gtceu:bronze_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -797,6 +941,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 30 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 3x gtceu:invar_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -814,6 +960,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 31 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初奇点反演」／耗时「3s」｜输出 8x thetornproductionline:celestial_secret_deducing_module_ulv
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_singularity_inversion 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/celestial_secret_deducing_module_ulv',
         type: 'primordial_singularity_inversion',
@@ -861,6 +1008,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 34 条（本次新增）｜元件「处理样板ULV」｜纸：类型「世线电路板组装」／耗时「3s」｜输出 8x shanhai:wl_board_ulv
+    // 🧪 物质模块【不消耗·等级门槛】：类型 wl_board_circuit_assembly 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/wl_board_ulv',
         type: 'wl_board_circuit_assembly',
@@ -878,6 +1026,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 35 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 2x gtceu:steel_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -895,6 +1045,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 36 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 2x gtceu:cupronickel_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -912,6 +1064,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 37 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 1x gtceu:pulsating_alloy_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -929,6 +1083,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 38 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 2x gtceu:wrought_iron_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -946,6 +1102,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 39 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 4x gtceu:brass_ingot
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -963,6 +1121,8 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 40 条（本次新增）｜元件「处理样板ULV」｜纸：类型「土高炉」／耗时「3s」｜输出 1x gtceu:glass_tube
+    // 🧪 物质模块【不消耗·真催化剂】：类型 primitive_blast_furnace 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 落 .notConsumable(...)，不设等级门槛。
+    // 🔴 该配方类型 `gtceu:primitive_blast_furnace` 不在 SHANHAI_TYPES 里（= 非山海的机器） ⇒ 按 2026-09-28 规则落 `.notConsumable(...)` 真催化剂（不设等级门槛）。
     // 🔴 🔴 土高炉配方：用户 2026-09-27 裁决「应该是没有电力要求的，就和原版的炼钢一样」
     //    ⇒ EUt 由元件默认的 8 改为 **0**（原版 primitive_blast_furnace 的 JSON 里根本没有 EUt 字段）。
     {
@@ -980,6 +1140,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 42 条（本次新增）｜元件「处理样板LV」｜纸：类型「原初物质重组」／耗时「60s」｜输出 1024x minecraft:obsidian
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/obsidian',
         type: 'primordial_matter_recombination',
@@ -997,6 +1158,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 43 条（本次新增）｜元件「处理样板LV」｜纸：类型「世线电路板组装」／耗时「60s」｜输出 1x shanhai:wl_board_lv
+    // 🧪 物质模块【不消耗·等级门槛】：类型 wl_board_circuit_assembly 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/wl_board_lv',
         type: 'wl_board_circuit_assembly',
@@ -1014,6 +1176,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 44 条（本次新增）｜元件「处理样板LV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:exquisite_emerald_gem
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/exquisite_emerald_gem',
         type: 'primordial_matter_recombination',
@@ -1031,6 +1194,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 45 条（本次新增）｜元件「处理样板LV」｜纸：类型「光子分离」／耗时「3s」｜输出 8x shanhai:photon_rainbow + 1x shanhai:unknown_particle
+    // 🧪 物质模块【不消耗·等级门槛】：类型 photon_separation 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/photon_rainbow',
         type: 'photon_separation',
@@ -1048,6 +1212,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 46 条（本次新增）｜元件「处理样板LV」｜纸：类型「原初奇点反演」／耗时「3s」｜输出 1x thetornproductionline:celestial_secret_deducing_module_lv
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_singularity_inversion 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/celestial_secret_deducing_module_lv',
         type: 'primordial_singularity_inversion',
@@ -1065,6 +1230,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 47 条（本次新增）｜元件「处理样板LV」｜纸：类型「光子分离」／耗时「3s」｜输出 2x shanhai:photon + 1x shanhai:photon_rainbow + 1x shanhai:unknown_particle
+    // 🧪 物质模块【不消耗·等级门槛】：类型 photon_separation 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/photon_2',
         type: 'photon_separation',
@@ -1082,6 +1248,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 48 条（本次新增）｜元件「处理样板LV」｜纸：类型「星际物质吸取」／耗时「30s」｜输出 1x gtlcore:treasures_crystal + 8x gtlcore:mining_crystal
+    // 🧪 物质模块【不消耗·等级门槛】：类型 interstellar_matter_absorption 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/treasures_crystal',
         type: 'interstellar_matter_absorption',
@@ -1099,6 +1266,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 49 条（本次新增）｜元件「处理样板LV」｜纸：类型「原初物质重组」／耗时「10s」｜输出 
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/primordial_matter_recombination_49',
         type: 'primordial_matter_recombination',
@@ -1116,6 +1284,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 50 条（本次新增）｜元件「处理样板LV」｜纸：类型「原初奇点反演」／耗时「3s」｜输出 64x kubejs:ulv_universal_circuit
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_singularity_inversion 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/ulv_universal_circuit',
         type: 'primordial_singularity_inversion',
@@ -1133,6 +1302,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 51 条（本次新增）｜元件「处理样板LV」｜纸：类型「光子分离」／耗时「3s」｜输出 1x shanhai:electron
+    // 🧪 物质模块【不消耗·等级门槛】：类型 photon_separation 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     // 🔴 纸「电子中微子产出概率5%」⇒ shanhai:electron_neutrino 改成 chancedOutput(500, 100)。⚠️ 单位：本包 chance 是【万分比】，10000=100% ⇒ 5% = 500（不是 5000）。⚠️ 第二个 int 不是"加成上限"，是【每超频一级的加成量 tierChanceBoost】（字节码实证：GTRecipeBuilder.chancedOutput 把 iload_3 写进字段 tierChanceBoost）。100 = GTCEu 自己"5% 档副产"的标准值（本包 414 条实际配方 chance=500/boost=100）。用户 2026-09-26 裁决：吃加成 ⇒ 第二参不能是 0，本文件取 100。
     {
         id: 'shanhai:pf/electron',
@@ -1151,6 +1321,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 52 条（本次新增）｜元件「处理样板LV」｜纸：类型「原初物质重组」／耗时「10s」｜输出 
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/primordial_matter_recombination_52',
         type: 'primordial_matter_recombination',
@@ -1168,6 +1339,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 53 条（本次新增）｜元件「处理样板LV」｜纸：类型「物质模块铸造」／耗时「60s」｜输出 1x shanhai:basic_material_module
+    // 🧪 物质模块【消耗】：产出里有物质模块 ⇒ 属于"制作物质模块"。模块留在 itemInputs 里，不挂催化剂、不设门槛。
     {
         id: 'shanhai:pf/basic_material_module',
         type: 'matter_module_casting',
@@ -1183,6 +1355,7 @@ var shanhaiPfGt = [
     }
 ,
     // ▶ PF.txt 第 54 条（本次新增）｜元件「处理样板LV」｜纸：类型「物质流凝结」／耗时「15s」｜输出 
+    // 🧪 物质模块【不消耗·等级门槛】：类型 matter_flow_condensation 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/matter_flow_condensation_54',
         type: 'matter_flow_condensation',
@@ -1199,40 +1372,8 @@ var shanhaiPfGt = [
         EUt: 32
     }
 ,
-    // ▶ PF.txt 第 56 条（本次新增）｜元件「处理样板MV」｜纸：类型「原初奇点反演」／耗时「3s」｜输出 1x thetornproductionline:celestial_secret_deducing_module_mv
-    // 🔴 纸写「物质模块是催化剂」，但该样板里【没有】任何物质模块物品 ⇒ 催化剂无从挂起，本条按"无催化剂"落。
-    {
-        id: 'shanhai:pf/celestial_secret_deducing_module_mv',
-        type: 'primordial_singularity_inversion',
-        circuit: 31,
-        notConsumable: [],
-        itemInputs: ['1x kubejs:mv_universal_circuit', '1x shanhai:material_deduction_module', '2x shanhai:electron_neutrino', '4x gtceu:double_aluminium_plate'],
-        inputFluids: [],
-        itemOutputs: ['1x thetornproductionline:celestial_secret_deducing_module_mv'],
-        outputFluids: [],
-        chancedOutputs: [],
-        duration: 60,
-        EUt: 128
-    }
-,
-    // ▶ PF.txt 第 57 条（本次新增）｜元件「处理样板MV」｜纸：类型「星际物质吸取」／耗时「3s」｜输出 1x shanhai:cosmic_dust
-    {
-        id: 'shanhai:pf/cosmic_dust',
-        type: 'interstellar_matter_absorption',
-        circuit: 2,
-        notConsumable: [],
-        moduleLevelRequirement: '1x shanhai:basic_material_module',
-        moduleLevelFallbackCatalyst: '1x shanhai:basic_material_module',
-        itemInputs: [],
-        inputFluids: [],
-        itemOutputs: ['1x shanhai:cosmic_dust'],
-        outputFluids: [],
-        chancedOutputs: [],
-        duration: 60,
-        EUt: 128
-    }
-,
-    // ▶ PF.txt 第 58 条（本次新增）｜元件「处理样板MV」｜纸：类型「世线电路板组装」／耗时「60s」｜输出 1x shanhai:wl_board_mv
+    // ▶ PF.txt 第 56 条（本次新增）｜元件「处理样板MV」｜纸：类型「世线电路板组装」／耗时「60s」｜输出 1x shanhai:wl_board_mv
+    // 🧪 物质模块【不消耗·等级门槛】：类型 wl_board_circuit_assembly 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/wl_board_mv',
         type: 'wl_board_circuit_assembly',
@@ -1249,24 +1390,7 @@ var shanhaiPfGt = [
         EUt: 128
     }
 ,
-    // ▶ PF.txt 第 59 条（本次新增）｜元件「处理样板MV」｜纸：类型「光子分离」／耗时「3s」｜输出 1x shanhai:down_quark + 1x shanhai:casing_empty_quark_emission_catalyst
-    {
-        id: 'shanhai:pf/down_quark',
-        type: 'photon_separation',
-        circuit: 2,
-        notConsumable: [],
-        moduleLevelRequirement: '1x shanhai:basic_material_module',
-        moduleLevelFallbackCatalyst: '1x shanhai:basic_material_module',
-        itemInputs: ['2x shanhai:photon_rainbow', '1x shanhai:down_quark_emission_catalyst'],
-        inputFluids: [],
-        itemOutputs: ['1x shanhai:down_quark', '1x shanhai:casing_empty_quark_emission_catalyst'],
-        outputFluids: ['shanhai:zero_point_energy 2000'],
-        chancedOutputs: [],
-        duration: 60,
-        EUt: 128
-    }
-,
-    // ▶ PF.txt 第 60 条（本次新增）｜元件「处理样板MV」｜纸：类型「原初奇点反演」／耗时「3s」｜输出 1x shanhai:down_quark_emission_catalyst
+    // ▶ PF.txt 第 57 条（本次新增）｜元件「处理样板MV」｜纸：类型「原初奇点反演」／耗时「3s」｜输出 1x shanhai:down_quark_emission_catalyst
     {
         id: 'shanhai:pf/down_quark_emission_catalyst',
         type: 'primordial_singularity_inversion',
@@ -1281,24 +1405,8 @@ var shanhaiPfGt = [
         EUt: 128
     }
 ,
-    // ▶ PF.txt 第 61 条（本次新增）｜元件「处理样板MV」｜纸：类型「光子分离」／耗时「3s」｜输出 1x shanhai:up_quark + 1x shanhai:casing_empty_quark_emission_catalyst
-    {
-        id: 'shanhai:pf/up_quark',
-        type: 'photon_separation',
-        circuit: 2,
-        notConsumable: [],
-        moduleLevelRequirement: '1x shanhai:basic_material_module',
-        moduleLevelFallbackCatalyst: '1x shanhai:basic_material_module',
-        itemInputs: ['2x shanhai:photon_rainbow', '1x shanhai:up_quark_emission_catalyst'],
-        inputFluids: [],
-        itemOutputs: ['1x shanhai:up_quark', '1x shanhai:casing_empty_quark_emission_catalyst'],
-        outputFluids: ['shanhai:zero_point_energy 2000'],
-        chancedOutputs: [],
-        duration: 60,
-        EUt: 128
-    }
-,
-    // ▶ PF.txt 第 62 条（本次新增）｜元件「处理样板MV」｜纸：类型「原初奇点反演」／耗时「30s」｜输出 1x shanhai:casing_empty_quark_emission_catalyst
+    // ▶ PF.txt 第 58 条（本次新增）｜元件「处理样板MV」｜纸：类型「原初奇点反演」／耗时「30s」｜输出 1x shanhai:casing_empty_quark_emission_catalyst
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_singularity_inversion 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/casing_empty_quark_emission_catalyst',
         type: 'primordial_singularity_inversion',
@@ -1315,24 +1423,44 @@ var shanhaiPfGt = [
         EUt: 128
     }
 ,
-    // ▶ PF.txt 第 63 条（本次新增）｜元件「处理样板MV」｜纸：类型「物质流凝结」／耗时「15s」｜输出 
+    // ▶ PF.txt 第 59 条（本次新增）｜元件「处理样板MV」｜纸：类型「光子分离」／耗时「3s」｜输出 1x shanhai:up_quark + 1x shanhai:casing_empty_quark_emission_catalyst
+    // 🧪 物质模块【不消耗·等级门槛】：类型 photon_separation 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
-        id: 'shanhai:pf/matter_flow_condensation_63',
-        type: 'matter_flow_condensation',
-        circuit: 0,
+        id: 'shanhai:pf/up_quark',
+        type: 'photon_separation',
+        circuit: 2,
         notConsumable: [],
         moduleLevelRequirement: '1x shanhai:basic_material_module',
         moduleLevelFallbackCatalyst: '1x shanhai:basic_material_module',
-        itemInputs: ['4x shanhai:cosmic_dust', '1x gtceu:stainless_steel_ingot', '1x gtceu:silicon_ingot'],
-        inputFluids: ['gtceu:polyethylene 200', 'gtceu:copper 1000'],
-        itemOutputs: [],
-        outputFluids: ['shanhai:matter_fluid_basic 1000'],
+        itemInputs: ['2x shanhai:photon_rainbow', '1x shanhai:up_quark_emission_catalyst'],
+        inputFluids: [],
+        itemOutputs: ['1x shanhai:up_quark', '1x shanhai:casing_empty_quark_emission_catalyst'],
+        outputFluids: ['shanhai:zero_point_energy 2000'],
         chancedOutputs: [],
-        duration: 300,
+        duration: 60,
         EUt: 128
     }
 ,
-    // ▶ PF.txt 第 64 条（本次新增）｜元件「处理样板MV」｜纸：类型「原初奇点反演」／耗时「3s」｜输出 1x shanhai:up_quark_emission_catalyst
+    // ▶ PF.txt 第 60 条（本次新增）｜元件「处理样板MV」｜纸：类型「光子分离」／耗时「3s」｜输出 1x shanhai:down_quark
+    // 🧪 物质模块【不消耗·等级门槛】：类型 photon_separation 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 3，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
+    // [SHANHAI-DESC] 夸克释放催化剂作为催化剂 ⇒ 落 `.notConsumable(64x shanhai:down_quark_emission_catalyst)`（**不消耗**，数量照纸上一字未改）
+    {
+        id: 'shanhai:pf/down_quark',
+        type: 'photon_separation',
+        circuit: 22,
+        notConsumable: ['64x shanhai:down_quark_emission_catalyst'],
+        moduleLevelRequirement: '1x shanhai:material_deduction_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:material_deduction_module',
+        itemInputs: ['2x shanhai:photon_rainbow'],
+        inputFluids: [],
+        itemOutputs: ['1x shanhai:down_quark'],
+        outputFluids: ['shanhai:zero_point_energy 2000'],
+        chancedOutputs: [],
+        duration: 60,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 61 条（本次新增）｜元件「处理样板MV」｜纸：类型「原初奇点反演」／耗时「3s」｜输出 1x shanhai:up_quark_emission_catalyst
     {
         id: 'shanhai:pf/up_quark_emission_catalyst',
         type: 'primordial_singularity_inversion',
@@ -1347,7 +1475,183 @@ var shanhaiPfGt = [
         EUt: 128
     }
 ,
-    // ▶ PF.txt 第 65 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:annealed_copper_ingot
+    // ▶ PF.txt 第 62 条（本次新增）｜元件「处理样板MV」｜纸：类型「物质模块铸造」／耗时「60s」｜输出 1x shanhai:material_deduction_module
+    // 🧪 物质模块【消耗】：产出里有物质模块 ⇒ 属于"制作物质模块"。模块留在 itemInputs 里，不挂催化剂、不设门槛。
+    {
+        id: 'shanhai:pf/material_deduction_module',
+        type: 'matter_module_casting',
+        circuit: 0,
+        notConsumable: [],
+        itemInputs: ['2x shanhai:wl_board_mv', '2x thetornproductionline:celestial_secret_deducing_module_mv', '1x shanhai:basic_material_module', '16x shanhai:up_quark', '16x shanhai:down_quark', '1x shanhai:dimensional_worldline_fragment'],
+        inputFluids: ['shanhai:matter_fluid_basic 2000', 'shanhai:matter_fluid_foundation 4000', 'shanhai:matter_fluid_entry 8000'],
+        itemOutputs: ['1x shanhai:material_deduction_module'],
+        outputFluids: [],
+        chancedOutputs: [],
+        duration: 1200,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 63 条（本次新增）｜元件「处理样板MV」｜纸：类型「光子分离」／耗时「3s」｜输出 1x shanhai:down_quark + 1x shanhai:casing_empty_quark_emission_catalyst
+    // 🧪 物质模块【不消耗·等级门槛】：类型 photon_separation 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
+    {
+        id: 'shanhai:pf/down_quark_2',
+        type: 'photon_separation',
+        circuit: 2,
+        notConsumable: [],
+        moduleLevelRequirement: '1x shanhai:basic_material_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:basic_material_module',
+        itemInputs: ['2x shanhai:photon_rainbow', '1x shanhai:down_quark_emission_catalyst'],
+        inputFluids: [],
+        itemOutputs: ['1x shanhai:down_quark', '1x shanhai:casing_empty_quark_emission_catalyst'],
+        outputFluids: ['shanhai:zero_point_energy 2000'],
+        chancedOutputs: [],
+        duration: 60,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 64 条（本次新增）｜元件「处理样板MV」｜纸：类型「物质流凝结」／耗时「15s」｜输出 
+    // 🧪 物质模块【不消耗·等级门槛】：类型 matter_flow_condensation 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
+    {
+        id: 'shanhai:pf/matter_flow_condensation_64',
+        type: 'matter_flow_condensation',
+        circuit: 0,
+        notConsumable: [],
+        moduleLevelRequirement: '1x shanhai:basic_material_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:basic_material_module',
+        itemInputs: ['4x shanhai:cosmic_dust', '1x gtceu:stainless_steel_ingot', '1x gtceu:silicon_ingot'],
+        inputFluids: ['gtceu:polyethylene 200', 'gtceu:copper 1000'],
+        itemOutputs: [],
+        outputFluids: ['shanhai:matter_fluid_basic 1000'],
+        chancedOutputs: [],
+        duration: 300,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 65 条（本次新增）｜元件「处理样板MV」｜纸：类型「世线震荡收集」／耗时「60s」｜输出 1x shanhai:dimensional_worldline_fragment
+    // 🧪 物质模块【消耗】：配方类型 worldline_oscillation_collection ∈ 世线族。模块留在 itemInputs 里，不挂催化剂、不设门槛。
+    {
+        id: 'shanhai:pf/dimensional_worldline_fragment',
+        type: 'worldline_oscillation_collection',
+        circuit: 0,
+        notConsumable: [],
+        itemInputs: ['4x shanhai:up_quark', '1x shanhai:worldline_crystal_core', '4x shanhai:down_quark', '1x shanhai:primordial_matter_caster', '1x shanhai:primordial_divergence_generator', '4x shanhai:wl_board_mv', '1x shanhai:primordial_critical_processing_module', '4x thetornproductionline:celestial_secret_deducing_module_mv', '1x shanhai:basic_material_module'],
+        inputFluids: ['shanhai:matter_fluid_basic 16000'],
+        itemOutputs: ['1x shanhai:dimensional_worldline_fragment'],
+        outputFluids: [],
+        chancedOutputs: [],
+        duration: 1200,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 66 条（本次新增）｜元件「处理样板MV」｜纸：类型「原初奇点反演」／耗时「3s」｜输出 64x kubejs:lv_universal_circuit
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_singularity_inversion 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 3，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
+    {
+        id: 'shanhai:pf/lv_universal_circuit',
+        type: 'primordial_singularity_inversion',
+        circuit: 32,
+        notConsumable: [],
+        moduleLevelRequirement: '1x shanhai:material_deduction_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:material_deduction_module',
+        itemInputs: ['1x thetornproductionline:celestial_secret_deducing_module_mv', '1x shanhai:wl_board_mv'],
+        inputFluids: [],
+        itemOutputs: ['64x kubejs:lv_universal_circuit'],
+        outputFluids: [],
+        chancedOutputs: [],
+        duration: 60,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 67 条（本次新增）｜元件「处理样板MV」｜纸：类型「原初世线切割」／耗时「60s」｜输出 1x shanhai:thread_shard_1
+    // 🧪 物质模块【不消耗·等级门槛】：本条产出 ∈ 残片族（shanhai:thread_shard_1 =「世线的运用」）⇒ 按 2026-10-01 判据【不消耗】 ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 3，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
+    // 🔴 ✅ 纸上写了「物质模块是催化剂」，与判据一致：本条产出 ∈ 残片族（shanhai:thread_shard_1 =「世线的运用」）⇒ **不消耗**，落等级门槛；纸与判据两边都对上了，不需要裁决。
+    {
+        id: 'shanhai:pf/thread_shard_1',
+        type: 'worldline_cutting',
+        circuit: 1,
+        notConsumable: [],
+        moduleLevelRequirement: '1x shanhai:material_deduction_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:material_deduction_module',
+        itemInputs: ['1x shanhai:dimensional_worldline_fragment', '4x shanhai:electron'],
+        inputFluids: [],
+        itemOutputs: ['1x shanhai:thread_shard_1'],
+        outputFluids: [],
+        chancedOutputs: [],
+        duration: 1200,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 68 条（本次新增）｜元件「处理样板MV」｜纸：类型「世线采样」／耗时「30s」｜输出 1x shanhai:worldline_crystal_core
+    {
+        id: 'shanhai:pf/worldline_crystal_core',
+        type: 'worldline_sampling',
+        circuit: 0,
+        notConsumable: [],
+        itemInputs: ['16x shanhai:unknown_particle', '64x shanhai:cosmic_dust', '4x gtlcore:treasures_crystal'],
+        inputFluids: ['shanhai:zero_point_energy 1024000'],
+        itemOutputs: ['1x shanhai:worldline_crystal_core'],
+        outputFluids: [],
+        chancedOutputs: [],
+        duration: 600,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 69 条（本次新增）｜元件「处理样板MV」｜纸：类型「原初奇点反演」／耗时「3s」｜输出 1x thetornproductionline:celestial_secret_deducing_module_mv
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_singularity_inversion 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 3，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
+    {
+        id: 'shanhai:pf/celestial_secret_deducing_module_mv',
+        type: 'primordial_singularity_inversion',
+        circuit: 31,
+        notConsumable: [],
+        moduleLevelRequirement: '1x shanhai:material_deduction_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:material_deduction_module',
+        itemInputs: ['1x kubejs:mv_universal_circuit', '2x shanhai:electron_neutrino', '4x gtceu:double_aluminium_plate'],
+        inputFluids: [],
+        itemOutputs: ['1x thetornproductionline:celestial_secret_deducing_module_mv'],
+        outputFluids: [],
+        chancedOutputs: [],
+        duration: 60,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 70 条（本次新增）｜元件「处理样板MV」｜纸：类型「星际物质吸取」／耗时「3s」｜输出 1x shanhai:cosmic_dust
+    // 🧪 物质模块【不消耗·等级门槛】：类型 interstellar_matter_absorption 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 2，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
+    {
+        id: 'shanhai:pf/cosmic_dust',
+        type: 'interstellar_matter_absorption',
+        circuit: 2,
+        notConsumable: [],
+        moduleLevelRequirement: '1x shanhai:basic_material_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:basic_material_module',
+        itemInputs: [],
+        inputFluids: [],
+        itemOutputs: ['1x shanhai:cosmic_dust'],
+        outputFluids: [],
+        chancedOutputs: [],
+        duration: 60,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 71 条（本次新增）｜元件「处理样板MV」｜纸：类型「光子分离」／耗时「3s」｜输出 1x shanhai:up_quark
+    // 🧪 物质模块【不消耗·等级门槛】：类型 photon_separation 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 3，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
+    // [SHANHAI-DESC] 夸克释放催化剂作为催化剂 ⇒ 落 `.notConsumable(64x shanhai:up_quark_emission_catalyst)`（**不消耗**，数量照纸上一字未改）
+    {
+        id: 'shanhai:pf/up_quark_2',
+        type: 'photon_separation',
+        circuit: 22,
+        notConsumable: ['64x shanhai:up_quark_emission_catalyst'],
+        moduleLevelRequirement: '1x shanhai:material_deduction_module',
+        moduleLevelFallbackCatalyst: '1x shanhai:material_deduction_module',
+        itemInputs: ['2x shanhai:photon_rainbow'],
+        inputFluids: [],
+        itemOutputs: ['1x shanhai:up_quark'],
+        outputFluids: ['shanhai:zero_point_energy 2000'],
+        chancedOutputs: [],
+        duration: 60,
+        EUt: 128
+    }
+,
+    // ▶ PF.txt 第 72 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:annealed_copper_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/annealed_copper_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1364,7 +1668,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 66 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:conductive_alloy_ingot
+    // ▶ PF.txt 第 73 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:conductive_alloy_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/conductive_alloy_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1381,7 +1686,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 67 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:compressed_fireclay
+    // ▶ PF.txt 第 74 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:compressed_fireclay
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/compressed_fireclay_pmr',
         type: 'primordial_matter_recombination',
@@ -1398,7 +1704,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 68 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 2x minecraft:paper
+    // ▶ PF.txt 第 75 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 2x minecraft:paper
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/paper_pmr',
         type: 'primordial_matter_recombination',
@@ -1415,7 +1722,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 69 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 4x gtceu:tin_alloy_ingot
+    // ▶ PF.txt 第 76 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 4x gtceu:tin_alloy_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/tin_alloy_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1432,7 +1740,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 70 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 2x gtceu:red_alloy_ingot
+    // ▶ PF.txt 第 77 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 2x gtceu:red_alloy_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/red_alloy_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1449,7 +1758,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 71 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 4x gtceu:bronze_ingot
+    // ▶ PF.txt 第 78 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 4x gtceu:bronze_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/bronze_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1466,7 +1776,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 72 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 3x gtceu:invar_ingot
+    // ▶ PF.txt 第 79 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 3x gtceu:invar_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/invar_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1483,7 +1794,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 73 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 2x gtceu:steel_ingot
+    // ▶ PF.txt 第 80 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 2x gtceu:steel_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/steel_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1500,7 +1812,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 74 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 2x gtceu:cupronickel_ingot
+    // ▶ PF.txt 第 81 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 2x gtceu:cupronickel_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/cupronickel_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1517,7 +1830,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 75 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:pulsating_alloy_ingot
+    // ▶ PF.txt 第 82 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:pulsating_alloy_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/pulsating_alloy_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1534,7 +1848,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 76 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 2x gtceu:wrought_iron_ingot
+    // ▶ PF.txt 第 83 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 2x gtceu:wrought_iron_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/wrought_iron_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1551,7 +1866,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 77 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 4x gtceu:brass_ingot
+    // ▶ PF.txt 第 84 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 4x gtceu:brass_ingot
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/brass_ingot_pmr',
         type: 'primordial_matter_recombination',
@@ -1568,7 +1884,8 @@ var shanhaiPfGt = [
         EUt: 8
     }
 ,
-    // ▶ PF.txt 第 78 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:glass_tube
+    // ▶ PF.txt 第 85 条（本次新增）｜元件「处理样板ULV」｜纸：类型「原初物质重组」／耗时「3s」｜输出 1x gtceu:glass_tube
+    // 🧪 物质模块【不消耗·等级门槛】：类型 primordial_matter_recombination 是山海自己的机器，且本条既非"制作物质模块"也非"世线族" ⇒ 落 ModuleLevelCondition（要求模块等级 ≥ 1，等级取自 MODULE_LEVELS）。⚠️ 门槛【不占输入槽】。若本条应当"只是纯催化剂（.notConsumable）"，改 SHANHAI_TYPES / WORLDLINE_TYPES 的判定即可，一处生效。
     {
         id: 'shanhai:pf/glass_tube_pmr',
         type: 'primordial_matter_recombination',
@@ -1587,7 +1904,7 @@ var shanhaiPfGt = [
 ]
 
 // -----------------------------------------------------------------------------
-// 注册：工作台配方（老 ②③④⑤⑥，5 条）
+// 注册：工作台配方（老 ②③④⑤⑥ = **历史值 2026-09-26 的 5 条**：它们建文件时就在，不随 PF.txt 变化，故无法现算）
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
@@ -1679,7 +1996,7 @@ ServerEvents.recipes(function (event) {
 })
 
 // -----------------------------------------------------------------------------
-// 注册：GT 机器配方（老 3 条 + 新增 30 条 = 33 条）
+// 注册：GT 机器配方（老 3 条 + 新增 65 条 = 68 条）
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 // 🔴 移除【被移植替代的老配方】
@@ -1702,8 +2019,17 @@ ServerEvents.recipes(function (event) {
 //      ⇒ 正确写法是【按 id 删】：GTRecipe implements 原版 Recipe<Container>（javap 类声明），有 id 字段与 getId()。
 //      ⇒ 这里用【正则 id】而不是硬猜命名空间（导出路径是 added_recipes/cxhmz/chemical_reactor/water_lava_to_steam.json，
 //        命名空间那一段我无法从路径 100% 反推）。
-//      （老配方来自 mod jar（ns=cxhmz/cxbp），不是 KJS 写的 —— 但这不影响 event.remove：
-//        它删的是配方表里的条目，不区分来源。真正要防的是删完之后又被后加的脚本加回来。）
+//      🔴 2026-09-30 【事实更正】老配方的来源**不是 mod jar**（旧注释说"来自 mod jar（ns=cxhmz/cxbp）"，那是错的）。
+//         现查（在已部署实例的 kubejs\server_scripts 里逐个文件 grep）真源是【宿主的 KJS 脚本】：
+//           · `cxhmz:water_lava_to_steam`  ⇐ [server_scripts]dgy.js:2604
+//              `event.recipes.gtceu.chemical_reactor('cxhmz:water_lava_to_steam')`
+//           · `cxbp:fire_charge_ch`        ⇐ [server_scripts]产线爆破.js:471
+//              `grtr.large_chemical_reactor("cxbp:fire_charge_ch")`
+//         ⇒ 运行期 id = `<ns>:<类型路径>/<路径>`（dgy.js 里写的 `cxhmz:water_lava_to_steam`
+//           在表里会变成 `cxhmz:chemical_reactor/water_lava_to_steam`）。
+//         ⚠️ 这是 KJS 脚本写的配方，但**不影响 event.remove**：我们删的是【配方表里的条目】，
+//            不分来源；而且本删除跑在 ServerEvents.loaded ⇒ 一定在全部 ServerEvents.recipes
+//            （KJS 注册配方的唯一时机）之后 ⇒ 不会被"后加的脚本又加回来"。
 //   ✅ 幂等：重复执行时返回值变 0，不报错。
 // -----------------------------------------------------------------------------
 ServerEvents.recipes(function (event) {
@@ -1772,7 +2098,7 @@ ServerEvents.recipes(function (event) {
             for (j = 0; j < r.outputFluids.length; j++) {
                 b = b.outputFluids(r.outputFluids[j])
             }
-//            // 🔴 概率产出（本次新增能力）：#33 的「电子中微子产出概率5%」
+//            // 🔴 概率产出（本次新增能力）：#51（1 条）的「电子中微子产出概率5%」
             // ⚠️ 第二个 int 是【每超频一级的加成量 tierChanceBoost】，不是"上限"：
             //    字节码实证 GTRecipeBuilder.chancedOutput(ItemStack,int,int)：
             //      67: aload_0 / 68: iload_2 / 69: putfield chance:I

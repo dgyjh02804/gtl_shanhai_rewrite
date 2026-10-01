@@ -1,6 +1,7 @@
 package com.shanhai.machine.module;
 
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
+import com.shanhai.common.text.ShanhaiTextParser;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
@@ -103,6 +104,10 @@ public class PrimordialMatterRecombinatorCore extends PrimordialModuleMachine {
         textList.add(Component.literal("物质模块等级: §bLv." + getMatterModuleLevel() + "§7 / 17"));
         ItemStack threadStack = getThreadBoostStack();
         textList.add(Component.literal("线程倍率槽: §7"
-                + (threadStack.isEmpty() ? "（空）" : threadStack.getHoverName().getString() + " §8[阶段 1 未生效]")));
+                + (threadStack.isEmpty() ? "（空）"
+                        // 🔴 2026-09-30：名字先剥 `&$…-` 前缀码，理由同 PrimordialModuleMachine 的
+                        //    线程槽 tooltip（世线残片名全带这个码，而本行含我们自己的 §7/§8）。
+                        : ShanhaiTextParser.stripStyleCode(threadStack.getHoverName().getString())
+                                + " §8[阶段 1 未生效]")));
     }
 }

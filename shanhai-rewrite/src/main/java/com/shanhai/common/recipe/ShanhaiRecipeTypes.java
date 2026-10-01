@@ -8,6 +8,13 @@ import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
 import com.lowdragmc.lowdraglib.gui.texture.ProgressTexture;
 import com.shanhai.ShanhaiMod;
 
+import net.minecraft.world.item.crafting.RecipeType;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -91,6 +98,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 本类只负责「把类型定义出来」。旧私货 48 台机器里只挂了其中一部分（另有 3 条全源码树零引用：
  *  {@code matter_aggregation} / {@code worldline_cutting} / {@code high_dimensional_fragment_cutting}）。
  * <b>谁挂什么在 {@code ModuleRegistry} / {@code ShanhaiMachines}，不在本文件。</b>
+ * <p>🔴 <b>2026-09-29 订正（上面那句是说【旧私货】的源码树，别拿它当本工程的现状）</b>：
+ *  本工程里这 3 条<b>都已被引用</b> —— 全部进了调试模块的 41 条大表
+ *  （{@code ModuleRegistry#RECIPE_DEBUG_MODULE}）；其中 {@code worldline_cutting}
+ *  又于 2026-09-29 被用户点单挂到<b>世线裂解枢纽</b>（{@code RECIPE_WORLDLINE_CRACKING_HUB}）。
  *
  * <h2>命名（用户 2026-09-22 亲定，不许改）</h2>
  * <ul>
@@ -266,7 +277,7 @@ public final class ShanhaiRecipeTypes {
     /** 高维碎片裁切（用户拟名）—— <b>原版零挂载</b>。 */
     public static GTRecipeType HIGH_DIMENSIONAL_FRAGMENT_CUTTING;
 
-    /** 原初世线切割（用户拟名）—— <b>原版零挂载</b>。 */
+    /** 原初世线切割（用户拟名）—— <b>原版零挂载</b>；🟢 2026-09-29 起挂到<b>世线裂解枢纽</b>。 */
     public static GTRecipeType WORLDLINE_CUTTING;
 
     /** 世线采样 —— 世线裂解枢纽。 */
@@ -318,16 +329,150 @@ public final class ShanhaiRecipeTypes {
     /** 量子化现实重构 —— 终焉创始现实修改矩阵。 */
     public static GTRecipeType SPACETIME_DISTORTION;
 
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // 🆕 2026-09-30 新增的第 42／43 条（用户点单：「透镜再见」按【透镜 → 电路】搬进我们的两个新类型）
+    //
+    // 用户原话（逐字）：
+    //   「你先给原初世线蚀刻核心添加一种全新的配方类型：原初激光蚀刻，并为其添加配方
+    //     （模板按照光子晶阵蚀刻里面所有的配方，但是透镜全换成电路），同理，给原初量子扭曲矩阵
+    //     添加一种全新的配方类型：原初蜂群铸造，并为其添加配方
+    //     （模板按照纳米蜂群工厂里面所有的配方，但是透镜全换成电路），
+    //     做完之后可以删除dgy中的透镜再见配方」
+    //
+    // 🔴 「模板」在这里是【运行期真实存在的两个上游类型】——`id` 与 `setMaxIOSize` 都不是估的：
+    //   · 光子晶阵蚀刻 = {@code gtceu:photon_matrix_etch}
+    //     出处：{@code gtladditions-3.2.8Custom-fix1.jar} →
+    //     {@code assets/gtceu/lang/zh_cn.json} 的 {@code "gtceu.photon_matrix_etch": "光子晶阵蚀刻"}；
+    //     注册字节码：{@code com.gtladd/gtladditions/common/recipe/GTLAddRecipesTypes.<clinit>}
+    //     偏移 11-56（{@code javap -p -c}，§见 handoff\outbound\原初激光蚀刻与蜂群铸造.md）
+    //     ⇒ {@code register("photon_matrix_etch","multiblock")} ＋ {@code setEUIO(IO.IN)}（偏移 27）
+    //       ＋ {@code setMaxIOSize(3, 1, 1, 0)}（偏移 30-34）＋ {@code setMaxTooltips(4)}（偏移 37）
+    //       ＋ {@code setProgressBar(PROGRESS_BAR_ARROW, LEFT_TO_RIGHT)}（偏移 47）。
+    //   · 纳米蜂群工厂 = {@code gtceu:nano_forge}
+    //     出处：{@code gtlcore-1.2.3.2.jar} → {@code assets/gtceu/lang/zh_cn.json} 的
+    //     {@code "gtceu.nano_forge": "纳米蜂群工厂"}；
+    //     注册字节码：{@code org.gtlcore.gtlcore.common.data.GTLRecipeTypes.<clinit>}
+    //     偏移 3294-3344 ⇒ {@code register("nano_forge","multiblock")}
+    //       ＋ {@code setMaxIOSize(6, 1, 3, 0)}（偏移 3307-3312）＋ {@code setEUIO(IO.IN)}（偏移 3318）
+    //       ＋ {@code setProgressBar(PROGRESS_BAR_ARROW, LEFT_TO_RIGHT)}（偏移 3327）。
+    //
+    // 🔴 IO 上限的依据 = **模板类型自己的 setMaxIOSize 逐字照抄**（不是按配方用量猜的）：
+    //   光子晶阵蚀刻的配方实际最多用 3 物品入 / 1 物品出 / 1 流体入 / 0 流体出 ⇒ (3,1,1,0) 正好贴合；
+    //   纳米蜂群工厂实际最多 6 物品入 / 1 物品出 / 3 流体入 / 0 流体出 ⇒ (6,1,3,0) 正好贴合。
+    //   ⇒ 新类型沿用同一组四元组，**不会有任何一条配方因槽位不足而写不进去**。
+    //
+    // ⚠️ 两处**故意**偏离模板（与本工程既有惯例一致，不是漏抄）：
+    //   ① 链尾 {@code setSound} 一律省略（用户 2026-09-22 裁决：gtladditions 的 setSound 不恢复）；
+    //   ② nano_forge 的 {@code addDataInfo(nano_forge_tier)} 省略 —— 那是给「1/2/3 阶纳米锻炉」
+    //      三个方块显示"纳米锻炉等级：N"用的；新类型挂在原初模块上，那条 tooltip 对它不成立。
+    //      配方里的 {@code nano_forge_tier} 数据字段**照抄保留**（见配方侧），只是不挂展示层。
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+
+    /** 🆕 原初激光蚀刻 —— 挂「原初世线蚀刻核心」；配方 = 光子晶阵蚀刻全部配方，透镜→电路。 */
+    public static GTRecipeType PRIMORDIAL_LASER_ETCHING;
+
+    /** 🆕 原初蜂群铸造 —— 挂「原初量子扭曲矩阵」；配方 = 纳米蜂群工厂全部配方，透镜→电路。 */
+    public static GTRecipeType PRIMORDIAL_SWARM_CASTING;
+
+    /**
+     * 🆕 原初物质定型 —— 挂「原初临界加工模块」；
+     * 配方 = 压模器 {@code gtceu:extruder} <b>1344</b> 条 ＋ 流体固化器
+     * {@code gtceu:fluid_solidifier} <b>1113</b> 条（合计 <b>2457</b>），
+     * <b>模头/模具 → 编程电路</b>（33 种 → 电路 0..32，实测用到 31 个、8 与 10 空着）。
+     *
+     * <p>🔴 <b>v3 · 2026-10-01 换源（本轮）</b>：v1/v2 把「压模器」错认成了
+     * {@code gtceu:forming_press} —— 那个 id 的中文名其实是<b>冲压机床</b>，
+     * 逐字取自 {@code assets/gtceu/lang/zh_cn.json}：{@code gtceu.extruder} = 「压模器」、
+     * {@code gtceu.forming_press} = 「冲压机床」、{@code gtceu.fluid_solidifier} = 「流体固化器」。
+     * ⇒ <b>真正的压模器 = {@code gtceu:extruder}</b>。换源后两台来源机器的配方<b>全取</b>
+     * （{@code extruder} 1344 ＋ {@code fluid_solidifier} 1113 = <b>2457</b>），
+     * <b>剔除 0 条</b> —— 这两台机器里本来就没有「产出模具/模头」的配方。
+     *
+     * <p>📜 <b>历史（v2 · 2026-10-01 用户拍板；口径已被 v3 取代，只作过程留档）</b>：
+     * 用户原话「可以删除那制作19个模头的配方，这样电路有冗余」。
+     * 那一版建立在「压模器 = 冲压机床」这个<b>错认</b>上：冲压机床原有 92 条，
+     * 其中 <b>19 条是「产出 {@code *_extruder_mold}」的做模头配方</b>
+     * （{@code gtceu:copy_shape_*_extruder_mold}）⇒ 92 → <b>73</b>；
+     * 需要电路的模具/模头 33 → <b>15</b> 种 ⇒ 电路只用 <b>0..14</b>。
+     * ⚠️ v3 换源之后这些数字<b>不再适用于本类型</b>（冲压机床的原类型照旧保留它自己那些配方），
+     * <b>不要再引用 92 / 73 / 15 / 0..14</b>；本类型的现行口径以上面那段与
+     * {@link #PRIMORDIAL_MATTER_FORMING_DECLARED_RECIPES} 为准。
+     *
+     * <p>🔴 <b>2026-10-01 用户点单：配方从【数据包】迁到【KubeJS】</b>。
+     * 用户原话：「配方不是应该写在kjs里面吗，你新增一个kjs文件，用命名格式，来写原初物质定型的配方」。
+     * 迁完之后的现状：
+     * <ul>
+     *   <li><b>配方正文</b>在 {@code kubejs\server_scripts\[server_scripts]shanhai_primordial_forming.js}
+     *       （2457 条，由 {@code kubejs\_generators\gen_pf_kjs.js} 生成，发射器 = {@code _pf_kjs_emit.js}）；</li>
+     *   <li><b>数据包那边已整目录搬走</b>（原先的
+     *       {@code shanhai-rewrite\src\main\resources\data\shanhai\recipes\primordial_forming\}
+     *       2457 个 json；留档在 {@code temp\pf-migrated-datapack-backup\primordial_forming\}）
+     *       ⇒ 否则游戏里会出现两份重复配方；</li>
+     *   <li><b>本类这一处仍然是必需的</b>：类型本身（{@code gtceu:primordial_matter_forming}）
+     *       必须在这里注册，KJS 才有 {@code event.recipes.gtceu.primordial_matter_forming(...)} 可用。
+     *       「只保留类型注册、不保留配方数据」正是本次迁移的口径。</li>
+     * </ul>
+     * <p>历史（迁到 KJS 之前那版的说法）：GTCEu 的配方本来就是数据包配方 ——
+     * {@code GTRecipeTypes.register(...)} 同时在 {@code BuiltInRegistries.RECIPE_TYPE} /
+     * {@code BuiltInRegistries.RECIPE_SERIALIZER} / {@code GTRegistries.RECIPE_TYPES} 三处登记同一个 id
+     * （字节码：{@code GTRecipeTypes.register} 偏移 14/26/44），所以数据包与 KJS 两条路都能落进同一个桶。
+     * 本类型的 KJS 绑定能生成，先例是 {@code primordial_laser_etching} / {@code primordial_swarm_casting}
+     * （见 {@code kubejs\server_scripts\[server_scripts]shanhai_lens_goodbye.js}，
+     * 它们用 {@code gtr[r.type](...)} 调的就是同一套自动生成的绑定）。
+     */
+    public static GTRecipeType PRIMORDIAL_MATTER_FORMING;
+
+    /**
+     * 🆕 两条新类型的【配方条数声明值】—— 只用于**由 id 可 grep 的证据行**与 KJS 侧对账。
+     *
+     * <p>🔴 为什么是常量而不是这里现算：本方法是**配方类型注册期**（{@code GTCEuAPI.RegisterEvent}），
+     * 而配方是**之后**才从 datapack / KubeJS 载入的 ⇒ Java 在注册期**数不出**真实条数，
+     * 硬要数就得挂一个很晚的监听器（收益为零、风险不小）。
+     * <p>判据在 KJS 侧（{@code temp\lens-goodbye\shanhai_lens_goodbye.js}）：
+     * {@code [SHANHAI-NEWTYPE] … ok=N failed=M declared=K}。**K 必须等于这里的常量**，
+     * 不等就说明"某一侧改了而另一侧没跟上"。条数是**从 export 现算出来的**（不是估的），
+     * 出处：{@code temp\lens-goodbye\plan.json} ← {@code build_plan.js} ← kubejs export 快照。
+     *
+     * <p>🆕 2026-09-30 第二次拍板后更新：用户原话「把那29条也分配进新配方」
+     * ⇒ 257→<b>283</b>（光子晶阵蚀刻 257 ＋ 透镜再见里原本没有等价物的 26 条），
+     *    25→<b>28</b>（纳米蜂群工厂 25 ＋ 那 3 条 nano 版）。
+     */
+    public static final int LASER_ETCH_DECLARED_RECIPES = 283;
+
+    /** 见 {@link #PRIMORDIAL_MATTER_FORMING_DECLARED_RECIPES}。 */
+    public static final int SWARM_CAST_DECLARED_RECIPES = 28;
+
+    /**
+     * 🆕 原初物质定型的【配方条数声明值】= <b>2457</b>（v3 · 2026-10-01 换源后的口径）。
+     *
+     * <p>出处（2026-10-01 迁移后更新）= <b>KJS 文件里的配方数据行数</b>：
+     * {@code kubejs\server_scripts\[server_scripts]shanhai_primordial_forming.js}
+     * 共 <b>2457</b> 行（构成：压模器 {@code gtceu:extruder} <b>1344</b> ＋ 流体固化器
+     * {@code gtceu:fluid_solidifier} <b>1113</b>，剔除 0 条；来源分布取自
+     * {@code temp\pf-fix\manifest-v3.tsv} 的 2457 行）。
+     * <p>🔴 <b>离线对账器</b>（不需要跑 MC）：{@code node tools\check-pf-declared-vs-disk.mjs}
+     * —— 它数 KJS 数据行数、再读本常量，两者必须相等；并另判一条「旧数据包里必须 0 个 json」。
+     * 它就是「声明值又过时了 / 数据包没搬干净」这两件事的下一次自动报警。
+     * <p>📜 历史：v1 / v2 的声明值<b>都已过时</b>（v3 换源的原因见
+     * {@link #PRIMORDIAL_MATTER_FORMING} 的字段注释），此处<b>不再写它们的数字</b>——
+     * 写了就会有人照抄。
+     * <p>判据在【运行期探针】{@link PrimordialFormingRecipeProbe}：
+     * 它会现查配方表并打出 {@code [SHANHAI-PFORM] 原初物质定型 现查=… 期望=…}，
+     * 与这里不等就是"某一侧改了而另一侧没跟上"。
+     */
+    public static final int PRIMORDIAL_MATTER_FORMING_DECLARED_RECIPES = 2457;
 
     /**
      * 真类型条数（不含 36 条显示类型）。fail-fast 用。
      *
      * <p>🔴 2026-09-26：<b>16 → 40</b>（用户点单"40 条"）；<b>同日再 40 → 41</b>
-     * （用户点单新增「原初物质解构」{@code primordial_matter_deconstruction}）。这个数字同时被
-     * {@link #countMissingReal()} 与 {@code ShanhaiRegistry#verifyRecipeTypesRegistered} 使用，
-     * <b>改类型数量必须同步改这里与那个数组</b>，否则 fail-fast 只查一部分、其余静默缺失。
+     * （用户点单新增「原初物质解构」{@code primordial_matter_deconstruction}）。
+     * <b>2026-09-30：41 → 43</b>（用户点单新增「原初激光蚀刻」＋「原初蜂群铸造」两条）。
+     * <b>2026-10-01：43 → 44</b>（用户点单新增「原初物质定型」{@code primordial_matter_forming}）。
+     * 这个数字同时被 {@link #countMissingReal()} 与 {@code ShanhaiRegistry#verifyRecipeTypesRegistered}
+     * 使用，<b>改类型数量必须同步改这里与那个数组</b>，否则 fail-fast 只查一部分、其余静默缺失。
      */
-    public static final int REAL_TYPE_COUNT = 41;
+    public static final int REAL_TYPE_COUNT = 44;
 
     /**
      * 幂等闸门。与 {@code ShanhaiMachines.INITIALIZED} / {@code ModuleRegistry} 同款写法。
@@ -338,7 +483,46 @@ public final class ShanhaiRecipeTypes {
      */
     private static final AtomicBoolean INITIALIZED = new AtomicBoolean(false);
 
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 2026-10-01 · 「全部山海配方类型」的【唯一真源】
+    //
+    // 用户原话（逐字）：
+    //   「还有那个 jei 的物质模块槽显示，你要不然把列表改成【全部山海配方类型】吧，
+    //     这样是不是更方便一些，以后不用补了」
+    //
+    // 🔴 起因（当天真出的 bug）：JEI 的物质模块催化剂展示槽原来是**手工白名单**——
+    //   `installModuleCatalystSlotUi()` 里一张 `new GTRecipeType[]{…}` 数组，2026-09-30 手工列举 8 项，
+    //   漏了 `worldline_cutting`（原初世线切割）⇒ 用户实测回报「这个配方没有显示这个」。
+    //   **根因不是"漏写一个"，而是"存在一份可以漏写的手工清单"。**
+    //
+    // 🔴 本表就是那份清单的**替代品**，而且不是"又抄一份更长的清单"：
+    //   它是**注册时自动登记的**——下面唯一的注册入口 {@link #register(String, String, RecipeType[])}
+    //   在调用 `GTRecipeTypes.register(...)` 的**同一行**把返回值塞进来。
+    //   ⇒ 以后新增一个配方类型 = 照旧写一句 `X = register("id", "multiblock")`，
+    //     **本列表自动多一条，JEI 自动挂上，不需要改这个文件里的任何数组**。
+    //   ⇒ 判据（可机器验）：`REGISTERED_TYPES` 与"实际注册成功的类型"恒等，且条数 == {@link #REAL_TYPE_COUNT}。
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+
+    /** 注册期自动登记的全部山海配方类型（顺序 = 注册顺序）。见上方长注释。 */
+    private static final List<GTRecipeType> REGISTERED_TYPES = new ArrayList<>();
+
     private ShanhaiRecipeTypes() {}
+
+    /**
+     * 🔴 <b>【唯一】的配方类型注册入口</b> —— 注册 + 当场登记进 {@link #REGISTERED_TYPES}。
+     *
+     * <p>语义与 {@code GTRecipeTypes.register(name, category, proxyRecipes)} <b>逐字等价</b>
+     * （参数原样转交、返回值原样返回），唯一区别是多做了自动登记。
+     *
+     * <p>⚠️ 新加配方类型时<b>必须</b>走这个入口（即：写 {@code X = register("id", "multiblock")}，
+     * 不要再写 {@code GTRecipeTypes.register(…)}）——直接调 GTCEu 那个会绕过自动登记，
+     * 结果是「JEI 展示槽漏挂」这类静默失败。该错误会被 {@link #assertTypeListsConsistent()} 当场抓住。
+     */
+    private static GTRecipeType register(String name, String category, RecipeType<?>... proxyRecipes) {
+        final GTRecipeType type = GTRecipeTypes.register(name, category, proxyRecipes);
+        REGISTERED_TYPES.add(type);
+        return type;
+    }
 
     /**
      * 全部 76 条的注册。<b>只允许</b>从 {@code GTCEuAPI.RegisterEvent<ResourceLocation, GTRecipeType>}
@@ -358,7 +542,7 @@ public final class ShanhaiRecipeTypes {
 
 
         // :82-91
-        PRIMORDIAL_POWER_GENERATOR = GTRecipeTypes.register("primordial_power_generator", "multiblock")
+        PRIMORDIAL_POWER_GENERATOR = register("primordial_power_generator", "multiblock")
                 .setMaxIOSize(2, 2, 2, 2)
                 .setEUIO(IO.OUT)
                 .setMaxTooltips(4)
@@ -371,7 +555,7 @@ public final class ShanhaiRecipeTypes {
 
 
         // :111-117 —— 原版无 slotOverlay；链尾 setSound(ARC) 在 setOffsetVoltageText 之前（照抄原版顺序）
-        PRIMORDIAL_STELLAR_REACTION = GTRecipeTypes.register("primordial_stellar_reaction", "multiblock")
+        PRIMORDIAL_STELLAR_REACTION = register("primordial_stellar_reaction", "multiblock")
                 .setMaxIOSize(5, 3, 5, 3)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -380,7 +564,7 @@ public final class ShanhaiRecipeTypes {
                 .setOffsetVoltageText(true);
 
         // :119-128
-        PRIMORDIAL_BIOLOGICAL_CORE = GTRecipeTypes.register("primordial_biological_core", "multiblock")
+        PRIMORDIAL_BIOLOGICAL_CORE = register("primordial_biological_core", "multiblock")
                 .setMaxIOSize(6, 3, 3, 3)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -391,7 +575,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :130-139
-        PRIMORDIAL_MATTER_RECOMBINATION = GTRecipeTypes.register("primordial_matter_recombination", "multiblock")
+        PRIMORDIAL_MATTER_RECOMBINATION = register("primordial_matter_recombination", "multiblock")
                 .setMaxIOSize(12, 3, 6, 3)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -402,7 +586,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :141-150
-        PRIMORDIAL_CAUSAL_WEAVING = GTRecipeTypes.register("primordial_causal_weaving", "multiblock")
+        PRIMORDIAL_CAUSAL_WEAVING = register("primordial_causal_weaving", "multiblock")
                 .setMaxIOSize(12, 3, 6, 3)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -413,7 +597,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :152-161
-        PRIMORDIAL_SINGULARITY_INVERSION = GTRecipeTypes.register("primordial_singularity_inversion", "multiblock")
+        PRIMORDIAL_SINGULARITY_INVERSION = register("primordial_singularity_inversion", "multiblock")
                 .setMaxIOSize(12, 3, 6, 3)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -430,7 +614,7 @@ public final class ShanhaiRecipeTypes {
 
 
         // :225-234 —— 原版 overlay 顺序是 DUST,FLUID,DUST,FLUID（与其他条不同，照抄）
-        TAIXU_SMELTING = GTRecipeTypes.register("taixu_smelting", "multiblock")
+        TAIXU_SMELTING = register("taixu_smelting", "multiblock")
                 .setMaxIOSize(2, 2, 1, 1)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -444,8 +628,20 @@ public final class ShanhaiRecipeTypes {
 
 
         // :268-277
-        WORLDLINE_OSCILLATION_COLLECTION = GTRecipeTypes.register("worldline_oscillation_collection", "multiblock")
-                .setMaxIOSize(2, 2, 2, 2)
+        // 🔴 2026-09-28 用户要求把「世线震荡收集」的 IO 放大到装配线那一套
+        //    （任务书转述的用户原话：「扩大世线震荡收集的输入到装配线那样」）。
+        //    ⇒ setMaxIOSize 由 (2, 2, 2, 2) 改成 (16, 1, 4, 0) —— 四元组整体照抄 gtceu 原生装配线。
+        //    取证（2026-09-28 实测 javap -p -c）：
+        //      libs\gtceu-1.20.1-1.4.4.jar!com/gregtechceu/gtceu/common/data/GTRecipeTypes.class
+        //      偏移 3445-3449 = bipush 16 / iconst_1 / iconst_4 / iconst_0 → setMaxIOSize(IIII)。
+        //    起因：用户新写的「世线震荡收集」样板（PF.txt no=68）要 9 个物品输入 + 1 个流体输入，
+        //      旧上限 (2,2,2,2) 装不下（物品输入缺 7 格）。
+        // 🔴 2026-09-29 用户订正：**只动输入**，输出还原成原来的 2 / 2
+        //    ⇒ setMaxIOSize = **(16, 2, 4, 2)**：物品入 16、流体入 4 保持不变；物品出 1→2、流体出 0→2。
+        //    与 2026-09-28 那版的差只有"输出"两个数（1→2、0→2），"输入"两个数一字未动。
+        //    ⚠️ 只改这四个实参；下面 setEUIO / setMaxTooltips / setProgressBar / setSlotOverlay 一行没动。
+        WORLDLINE_OSCILLATION_COLLECTION = register("worldline_oscillation_collection", "multiblock")
+                .setMaxIOSize(16, 2, 4, 2)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
                 .setProgressBar(GuiTextures.PROGRESS_BAR_ARROW, ProgressTexture.FillDirection.LEFT_TO_RIGHT)
@@ -455,7 +651,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :279-288
-        INTERSTELLAR_MATTER_ABSORPTION = GTRecipeTypes.register("interstellar_matter_absorption", "multiblock")
+        INTERSTELLAR_MATTER_ABSORPTION = register("interstellar_matter_absorption", "multiblock")
                 .setMaxIOSize(2, 2, 2, 2)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -466,7 +662,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :290-298 —— 3 条 slotOverlay
-        MATTER_FLOW_CONDENSATION = GTRecipeTypes.register("matter_flow_condensation", "multiblock")
+        MATTER_FLOW_CONDENSATION = register("matter_flow_condensation", "multiblock")
                 .setMaxIOSize(4, 2, 2, 2)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -476,7 +672,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :300-309
-        PRIMORDIAL_ENERGY_ABSORPTION = GTRecipeTypes.register("primordial_energy_absorption", "multiblock")
+        PRIMORDIAL_ENERGY_ABSORPTION = register("primordial_energy_absorption", "multiblock")
                 .setMaxIOSize(1, 2, 2, 2)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -493,7 +689,7 @@ public final class ShanhaiRecipeTypes {
         //    的物品输入要 3 格（1~2 个真物品 + notConsumable(力场发生器) + .circuit(1)），旧上限只有 2 ⇒ 溢出。
         //    放宽到 4 后这 3 条装得下（最坏 4 格，留 1 格余量）；物品出放宽到 10 是同一句裁决里的配套。
         //    ⚠️ 改的是【注册期上限】，本次【没有】改任何配方；四条实参位置 = (物品入, 物品出, 流体入, 流体出)。
-        PHOTON_SEPARATION = GTRecipeTypes.register("photon_separation", "multiblock")
+        PHOTON_SEPARATION = register("photon_separation", "multiblock")
                 .setMaxIOSize(4, 10, 2, 2)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -526,7 +722,7 @@ public final class ShanhaiRecipeTypes {
         //    📌 顺带：旧的 (15,6,6,6) 反而装不下 matter_module_casting_create_mk（17 个物品输入）
         //      —— 这是旧口径下就存在的既有问题，本次一并修好。
         //      （原版私货 DShanhaiRecipeTypes 里也是 (15,6,6,6)，javap 实证 ⇒ 不是我方引入。）
-        MATTER_MODULE_CASTING = GTRecipeTypes.register("matter_module_casting", "multiblock")
+        MATTER_MODULE_CASTING = register("matter_module_casting", "multiblock")
                 .setMaxIOSize(17, 1, 4, 0)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -551,7 +747,7 @@ public final class ShanhaiRecipeTypes {
         //      max(itemIn)=4 / max(itemOut)=1 / max(fluidIn)=2 / max(fluidOut)=1
         //      ⇒ 新规格下 **9 条超出流体限额**（6 条 fluidIn=2 > 1、4 条 fluidOut=1 > 0）。
         //      这是本改动的**已知代价**，已按要求上报，未擅自改配方、也未擅自放宽规格。
-        MATTER_FORGING = GTRecipeTypes.register("matter_forging", "multiblock")
+        MATTER_FORGING = register("matter_forging", "multiblock")
                 .setMaxIOSize(9, 1, 1, 0)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -582,7 +778,7 @@ public final class ShanhaiRecipeTypes {
         //      ② 用 NBT 解析器回读新文件，逐槽数 id 并对绝对坐标做断言（生成器自证，见交付报告）。
         //    ⚠️ 与 matter_module_casting 那次（改 setMaxIOSize 去贴合模板）同口径：
         //       模板画几个槽，上限就写几个。
-        PRIMORDIAL_MATTER_DECONSTRUCTION = GTRecipeTypes.register("primordial_matter_deconstruction", "multiblock")
+        PRIMORDIAL_MATTER_DECONSTRUCTION = register("primordial_matter_deconstruction", "multiblock")
                 .setMaxIOSize(1, 103, 1, 16)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -593,7 +789,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :343-351 —— PROGRESS_BAR_CIRCUIT + CIRCUIT_OVERLAY
-        WL_BOARD_CIRCUIT_ASSEMBLY = GTRecipeTypes.register("wl_board_circuit_assembly", "multiblock")
+        WL_BOARD_CIRCUIT_ASSEMBLY = register("wl_board_circuit_assembly", "multiblock")
                 .setMaxIOSize(9, 3, 6, 4)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -603,7 +799,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.CIRCUIT_OVERLAY);
 
         // :353-361 —— 3 条 overlay：FLUID,DUST,CIRCUIT（注意不是全 CIRCUIT）
-        WL_BOARD_WAFER_ETCHING = GTRecipeTypes.register("wl_board_wafer_etching", "multiblock")
+        WL_BOARD_WAFER_ETCHING = register("wl_board_wafer_etching", "multiblock")
                 .setMaxIOSize(6, 3, 4, 3)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -634,14 +830,14 @@ public final class ShanhaiRecipeTypes {
         // ═══════════════════════════════════════════════════════════════════════════════════════
 
         // :485-490 —— 无 slotOverlay，setMaxTooltips(1)
-        PROXY_EXECUTION = GTRecipeTypes.register("proxy_execution", "multiblock")
+        PROXY_EXECUTION = register("proxy_execution", "multiblock")
                 .setMaxIOSize(0, 0, 0, 0)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(1)
                 .setProgressBar(GuiTextures.PROGRESS_BAR_ARROW, ProgressTexture.FillDirection.LEFT_TO_RIGHT);
 
         // :474-483
-        COIN_FORGE = GTRecipeTypes.register("coin_forge", "multiblock")
+        COIN_FORGE = register("coin_forge", "multiblock")
                 .setMaxIOSize(9, 6, 6, 3)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -652,7 +848,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :453-462
-        NINE_INDUSTRIAL = GTRecipeTypes.register("nine_industrial", "multiblock")
+        NINE_INDUSTRIAL = register("nine_industrial", "multiblock")
                 .setMaxIOSize(24, 24, 12, 12)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -663,7 +859,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :442-451 —— PROGRESS_BAR_FUSION
-        BLACK_HOLE_EVENT_HORIZON_BLAST = GTRecipeTypes.register("black_hole_event_horizon_blast", "multiblock")
+        BLACK_HOLE_EVENT_HORIZON_BLAST = register("black_hole_event_horizon_blast", "multiblock")
                 .setMaxIOSize(3, 9, 3, 6)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -674,7 +870,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :431-440 —— PROGRESS_BAR_COMPRESS
-        BLACK_HOLE_NEUTRONIUM_COMPRESSOR = GTRecipeTypes.register("black_hole_neutronium_compressor", "multiblock")
+        BLACK_HOLE_NEUTRONIUM_COMPRESSOR = register("black_hole_neutronium_compressor", "multiblock")
                 .setMaxIOSize(9, 6, 6, 5)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -685,7 +881,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :420-429 —— PROGRESS_BAR_COMPRESS
-        BLACK_HOLE_COMPRESSOR = GTRecipeTypes.register("black_hole_compressor", "multiblock")
+        BLACK_HOLE_COMPRESSOR = register("black_hole_compressor", "multiblock")
                 .setMaxIOSize(9, 6, 6, 5)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -696,7 +892,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :409-418
-        HIGH_DIMENSIONAL_FRAGMENT_CUTTING = GTRecipeTypes.register("high_dimensional_fragment_cutting", "multiblock")
+        HIGH_DIMENSIONAL_FRAGMENT_CUTTING = register("high_dimensional_fragment_cutting", "multiblock")
                 .setMaxIOSize(4, 9, 2, 4)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -707,7 +903,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :398-407
-        WORLDLINE_CUTTING = GTRecipeTypes.register("worldline_cutting", "multiblock")
+        WORLDLINE_CUTTING = register("worldline_cutting", "multiblock")
                 .setMaxIOSize(6, 6, 4, 4)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -718,7 +914,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :386-395
-        WORLDLINE_SAMPLING = GTRecipeTypes.register("worldline_sampling", "multiblock")
+        WORLDLINE_SAMPLING = register("worldline_sampling", "multiblock")
                 .setMaxIOSize(3, 12, 3, 6)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -729,7 +925,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :375-384
-        WORLDLINE_MATTER_RECURRENCE = GTRecipeTypes.register("worldline_matter_recurrence", "multiblock")
+        WORLDLINE_MATTER_RECURRENCE = register("worldline_matter_recurrence", "multiblock")
                 .setMaxIOSize(9, 6, 6, 3)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -740,7 +936,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :364-373
-        WORLDLINE_PROBABILITY_CRACKING = GTRecipeTypes.register("worldline_probability_cracking", "multiblock")
+        WORLDLINE_PROBABILITY_CRACKING = register("worldline_probability_cracking", "multiblock")
                 .setMaxIOSize(6, 9, 4, 4)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -751,7 +947,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :256-266 —— category "single"；全 40 条里唯一 5 条 slotOverlay（原版原文第 261/262 行是两条相同的 DUST，照抄不合并）
-        PHOTON_SIPHON = GTRecipeTypes.register("photon_siphon", "single")
+        PHOTON_SIPHON = register("photon_siphon", "single")
                 .setMaxIOSize(4, 2, 2, 2)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -763,7 +959,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, true, GuiTextures.FLUID_SLOT);
 
         // :245-254 —— category "single"
-        ZERO_POINT_CONVERSION = GTRecipeTypes.register("zero_point_conversion", "single")
+        ZERO_POINT_CONVERSION = register("zero_point_conversion", "single")
                 .setMaxIOSize(2, 2, 2, 2)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -774,7 +970,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, true, GuiTextures.FLUID_SLOT);
 
         // :236-243 —— category "single"（用户 2026-09-22 亲定中文名：原初物质凝集）
-        MATTER_AGGREGATION = GTRecipeTypes.register("matter_aggregation", "single")
+        MATTER_AGGREGATION = register("matter_aggregation", "single")
                 .setMaxIOSize(2, 2, 0, 0)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -783,7 +979,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :216-223
-        GRAVITATIONAL_WAVE_CONSUMPTION = GTRecipeTypes.register("gravitational_wave_consumption", "multiblock")
+        GRAVITATIONAL_WAVE_CONSUMPTION = register("gravitational_wave_consumption", "multiblock")
                 .setMaxIOSize(1, 0, 1, 0)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -792,7 +988,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(false, false, false, GuiTextures.DUST_OVERLAY);
 
         // :205-214
-        TIANJIE_NAVIGATION = GTRecipeTypes.register("tianjie_navigation", "multiblock")
+        TIANJIE_NAVIGATION = register("tianjie_navigation", "multiblock")
                 .setMaxIOSize(6, 3, 6, 3)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -803,7 +999,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :194-203
-        NEBULA_SIPHONING = GTRecipeTypes.register("nebula_siphoning", "multiblock")
+        NEBULA_SIPHONING = register("nebula_siphoning", "multiblock")
                 .setMaxIOSize(6, 3, 6, 3)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -814,7 +1010,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :183-192 —— 全 40 条里唯一的 EUIO = IO.BOTH
-        CHAOS_CRAFTING = GTRecipeTypes.register("chaos_crafting", "multiblock")
+        CHAOS_CRAFTING = register("chaos_crafting", "multiblock")
                 .setMaxIOSize(24, 24, 12, 12)
                 .setEUIO(IO.BOTH)
                 .setMaxTooltips(4)
@@ -825,7 +1021,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :174-181 —— category 是裸字符串 "single"
-        SEVENTY_TWO_CHANGES = GTRecipeTypes.register("seventy_two_changes", "single")
+        SEVENTY_TWO_CHANGES = register("seventy_two_changes", "single")
                 .setMaxIOSize(1, 1, 0, 0)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -834,7 +1030,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :163-172
-        GRAVITATIONAL_WAVE_PRODUCTION = GTRecipeTypes.register("gravitational_wave_production", "multiblock")
+        GRAVITATIONAL_WAVE_PRODUCTION = register("gravitational_wave_production", "multiblock")
                 .setMaxIOSize(2, 2, 2, 2)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -845,7 +1041,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :102-109 —— 链尾 setSound(GTSoundEntries.ARC)：GTCEu 自己的 API，按队长 2026-09-22 裁决【保留抄写】
-        PRIMORDIAL_MYRIAD_ASCENSION_TIER_1 = GTRecipeTypes.register("primordial_myriad_ascension_tier_1", "multiblock")
+        PRIMORDIAL_MYRIAD_ASCENSION_TIER_1 = register("primordial_myriad_ascension_tier_1", "multiblock")
                 .setMaxIOSize(4, 0, 4, 0)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -855,7 +1051,7 @@ public final class ShanhaiRecipeTypes {
                 .setSound(GTSoundEntries.ARC);
 
         // :93-100
-        PRIMORDIAL_MYRIAD_ASCENSION_TIER_2 = GTRecipeTypes.register("primordial_myriad_ascension_tier_2", "multiblock")
+        PRIMORDIAL_MYRIAD_ASCENSION_TIER_2 = register("primordial_myriad_ascension_tier_2", "multiblock")
                 .setMaxIOSize(4, 0, 4, 0)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -865,7 +1061,7 @@ public final class ShanhaiRecipeTypes {
                 .setSound(GTSoundEntries.ARC);
 
         // :71-80
-        KU_MING_YUAN_YANG = GTRecipeTypes.register("kmyy", "multiblock")
+        KU_MING_YUAN_YANG = register("kmyy", "multiblock")
                 .setMaxIOSize(2, 1, 0, 0)
                 .setEUIO(IO.OUT)
                 .setMaxTooltips(4)
@@ -876,7 +1072,7 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
 
         // :60-69（作废块原文漏了行号标记，2026-09-26 按上游补上）
-        SPACETIME_DISTORTION = GTRecipeTypes.register("spacetime_distortion", "multiblock")
+        SPACETIME_DISTORTION = register("spacetime_distortion", "multiblock")
                 .setMaxIOSize(9, 6, 6, 5)
                 .setEUIO(IO.IN)
                 .setMaxTooltips(4)
@@ -885,6 +1081,49 @@ public final class ShanhaiRecipeTypes {
                 .setSlotOverlay(false, false, false, GuiTextures.DUST_OVERLAY)
                 .setSlotOverlay(true, false, true, GuiTextures.FLUID_SLOT)
                 .setSlotOverlay(true, false, false, GuiTextures.DUST_OVERLAY);
+
+        // ═════════════ 2026-09-30 新增第 42／43 条（用户点单；见字段区那段长注释）═════════════
+        // 逐字照抄模板类型的槽位规格（IO 上限的依据 = 模板自己的 setMaxIOSize，字节码见字段区注释）。
+        // 唯一偏离 = 去掉链尾 setSound（用户 2026-09-22 裁决）+ 不挂 nano_forge 的 addDataInfo。
+
+        // :模板 gtceu:photon_matrix_etch（gtladditions GTLAddRecipesTypes 偏移 11-53）→ setMaxIOSize(3, 1, 1, 0)
+        PRIMORDIAL_LASER_ETCHING = register("primordial_laser_etching", "multiblock")
+                .setMaxIOSize(3, 1, 1, 0)
+                .setEUIO(IO.IN)
+                .setMaxTooltips(4)
+                .setProgressBar(GuiTextures.PROGRESS_BAR_ARROW, ProgressTexture.FillDirection.LEFT_TO_RIGHT);
+
+        // :模板 gtceu:nano_forge（gtlcore GTLRecipeTypes 偏移 3294-3327）→ setMaxIOSize(6, 1, 3, 0)
+        PRIMORDIAL_SWARM_CASTING = register("primordial_swarm_casting", "multiblock")
+                .setMaxIOSize(6, 1, 3, 0)
+                .setEUIO(IO.IN)
+                .setMaxTooltips(4)
+                .setProgressBar(GuiTextures.PROGRESS_BAR_ARROW, ProgressTexture.FillDirection.LEFT_TO_RIGHT);
+
+        // ═════════════ 2026-10-01 新增第 44 条（用户点单；见字段区那段长注释）═════════════
+        // 它同时装【两个】来源机器的配方 ⇒ IO 上限按【逐项取两个来源的最大值】定，不是抄某一个：
+        //   冲压机床（旧误认成"压模器"的那台）gtceu:forming_press   setMaxIOSize(6, 1, 0, 0)（bytecode 偏移 1719-1723）
+        //   流体固化器                         gtceu:fluid_solidifier setMaxIOSize(1, 1, 1, 0)（bytecode 偏移 1600-1603）
+        //   ⇒ 逐项 max = (6, 1, 1, 0)
+        //   ⚠️ 真正的压模器 gtceu:extruder 自己的 setMaxIOSize 本轮【未取证】（未证实，不许当成已知值）。
+        // 并与【实际数据】独立核过（离线现算：node temp\pf-const-sync\measure.mjs）：
+        //   2457 条里 物品入最多 2 / 物品出最多 1 / 流体入最多 1 / 流体出最多 0
+        //   ⇒ (6, 1, 1, 0) 对全部 2457 条【够用】（物品入的 6 现在是富余，不再是"正好贴合"）。
+        //   （v1/v2 的旧条数同值；那些口径已过时，此处不再引用具体数字。）
+        // 进度条取 PROGRESS_BAR_ARROW（流体固化器用的那条；2457 条里 1113 条来自它）；
+        // 旧注释说"压模器用的是 PROGRESS_BAR_COMPRESS"—— 那其实是【冲压机床】的属性，
+        // 真正的压模器 gtceu:extruder 用哪条进度条本轮未复核（未证实）；
+        // 一个类型只能有一条进度条，这里是有意识的选择，不是漏抄。
+        // 🔴 刻意【不】照抄冲压机床 gtceu:forming_press 的 addCustomRecipeLogic(new FormingPressLogic())：
+        //    字节码实证那个逻辑内部【硬编码】GTRecipeTypes.FORMING_PRESS_RECIPES（偏移 134），
+        //    它服务的是"给命名模具改名"的 GUI 功能，不是这 2457 条里的任何一条 ⇒ 挂上去也不会生效。
+        //    （v1/v2 把 FormingPressLogic 说成"压模器的逻辑"—— 它属于冲压机床，不是压模器。）
+        //    ⚠️ gtceu:extruder 有没有自己的 addCustomRecipeLogic，本轮未取证（未证实）。
+        PRIMORDIAL_MATTER_FORMING = register("primordial_matter_forming", "multiblock")
+                .setMaxIOSize(6, 1, 1, 0)
+                .setEUIO(IO.IN)
+                .setMaxTooltips(4)
+                .setProgressBar(GuiTextures.PROGRESS_BAR_ARROW, ProgressTexture.FillDirection.LEFT_TO_RIGHT);
 
         // ───────── fail-fast（就地）：任何一条静默没生效，就在这里响亮地失败 ─────────
         int realMissing = countMissingReal();
@@ -896,6 +1135,11 @@ public final class ShanhaiRecipeTypes {
                     + " / taixu_smelting=" + TAIXU_SMELTING);
         }
 
+        // ───────── 🔴 2026-10-01 两条清单互钉（就地）：见 assertTypeListsConsistent() ─────────
+        // 为什么放在这里：它必须在**全部注册之后**、且在 installModuleCatalystSlotUi() 之前，
+        // 因为后者要拿 REGISTERED_TYPES 当"全部山海配方类型"的真源。
+        assertTypeListsConsistent();
+
         ShanhaiMod.LOGGER.info("[SHANHAI-SPEC] 配方类型已注册：真类型 {} / {}"
                         // 🔴 2026-09-26 订正：这句原写「2026-09-23 裁剪后仅保留被 24 台模块引用的类型」——
                         //    用户 2026-09-26 点单"40 条"已把那 24 条恢复 ⇒ 旧话术不再是事实，故改写。
@@ -905,6 +1149,157 @@ public final class ShanhaiRecipeTypes {
                         + "36 条 GTNH 显示类型仍不恢复 —— 用户 2026-09-22「那个 GTNH 是我重制版不会添加的」；"
                         + "链尾 gtladditions 的 setSound 按用户 2026-09-22 裁决省略）",
                 REAL_TYPE_COUNT - realMissing, REAL_TYPE_COUNT);
+
+        // ───────── 🆕 2026-09-30：两个新类型的【可 grep 证据行】─────────
+        // 🔴 这条是任务书要求的证据行。**条数写的是"声明值"**，不是这里现算的 ——
+        //    注册期配方还没加载（datapack/KubeJS 都晚于配方类型注册），Java 这边**数不出**真实条数。
+        //    真正的条数判据在 KJS 侧（temp\lens-goodbye\shanhai_lens_goodbye.js 的
+        //    `[SHANHAI-NEWTYPE] ... ok=... failed=... declared=...`）。
+        //    ⇒ 这两个常量就是两边对账的锚：KJS 的 declared 必须等于它，不等就是某一侧改了而另一侧没跟上。
+        ShanhaiMod.LOGGER.info("[SHANHAI-NEWTYPE] 原初激光蚀刻 = {}（{} 条配方，"
+                        + "透镜→电路 映射表见 handoff\\outbound\\原初激光蚀刻与蜂群铸造.md §3；"
+                        + "模板 = 光子晶阵蚀刻 gtceu:photon_matrix_etch；挂「原初世线蚀刻核心」）",
+                PRIMORDIAL_LASER_ETCHING.registryName, LASER_ETCH_DECLARED_RECIPES);
+        ShanhaiMod.LOGGER.info("[SHANHAI-NEWTYPE] 原初蜂群铸造 = {}（{} 条配方，"
+                        + "透镜→电路 映射表见 handoff\\outbound\\原初激光蚀刻与蜂群铸造.md §3；"
+                        + "模板 = 纳米蜂群工厂 gtceu:nano_forge；挂「原初量子扭曲矩阵」）",
+                PRIMORDIAL_SWARM_CASTING.registryName, SWARM_CAST_DECLARED_RECIPES);
+        ShanhaiMod.LOGGER.info("[SHANHAI-NEWTYPE] 原初物质定型 = {}（{} 条配方，"
+                        + "模头/模具→电路 映射表见 handoff\\outbound\\原初物质定型.md §2；"
+                        + "来源 = 压模器 gtceu:extruder(1344 条) ＋ 流体固化器 gtceu:fluid_solidifier(1113 条)"
+                        + " = 2457（剔除 0 条；旧版把压模器误认成 gtceu:forming_press 冲压机床，已纠正）；"
+                        + "模头/模具→电路 用 0..32（实测用到 31 个，8 与 10 空）；"
+                        + "挂「原初临界加工模块」；配方以数据包形式随 jar 一起装）",
+                PRIMORDIAL_MATTER_FORMING.registryName, PRIMORDIAL_MATTER_FORMING_DECLARED_RECIPES);
+
+        // ───────── JEI 展示层：给"带等级门槛"的配方插一个物质模块催化剂槽（不碰任何配方数据）─────────
+        installModuleCatalystSlotUi();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 2026-09-30 新增：JEI 配方页的「物质模块催化剂展示槽」（纯展示层）
+    //
+    // 用户原始需求（逐字）：「我希望 jei 右键物质模块（显示用途），可以看到物质模块作为我们特殊的催化剂的配方也可以出现」
+    //
+    // 现状（前一轮方案研究实测）：41 条「形态甲·等级门槛」配方的模块【不在 recipe.getInputs() 里】，
+    // 只挂在 recipe.conditions 的 ModuleLevelCondition 上 ⇒ JEI 的「用途」按 ingredient 反查，查不到它。
+    // ⇒ 做法 = 给这些配方类型挂一个 uiBuilder，在 JEI 配方页插一个【CATALYST 角色】的展示槽，
+    //    槽里放【该条配方条件里实际写的那个模块】（从 recipe.conditions 读，不硬编码）。
+    //    机制链（JEI「用途」键同时查 INPUT 与 CATALYST）见 ModuleCatalystSlotUI 的类注释。
+    //
+    // 🔴 红线：只改展示层。不碰 GTRecipe.inputs / conditions / RecipeRunner / 配方生成。
+    //    ⇒ cost = 0：形态甲"门槛不占输入槽"的卖点完整保留（模块机模块槽是 IO.NONE，
+    //      对 RecipeRunner 不可见，所以门槛是模块机上唯一可行的形态，也不能改成 notConsumable）。
+    //
+    // 🔴 本轮【故意只挂 1 个类型】（竖切）：跑通一次之后再铺到全部 8 个类型。
+    //    🟢 2026-09-30 状态更新：**已铺开**（下面数组里那 7 行注释放开了）。
+    //       触发 = 用户原话「jei是成功了一半，有些配方可以显示物质模块，有些不可以」
+    //       ⇒ "有些不能看"正是这里的竖切范围造成的，不是坏。
+    //    ⛔ 以下这段竖切原话【保留不改】（本工程惯例：改判时旧文不删，只加注）。
+    //    选 primordial_singularity_inversion（原初奇点反演）当竖切类型的理由：
+    //      该类型共 8 条配方 = 6 条带门槛（3 个不同模块：入门物质模块 x3 / 基础物质模块 x1 / 物质推演模块 x2）
+    //      + 2 条不带门槛（下-夸克释放催化剂 / 上-夸克释放催化剂）。
+    //      ⇒ 一次进游戏就能同时验四件事：①槽出现了 ②槽里是该条配方真正要的那个模块（三个不同模块互不串）
+    //        ③「用途」能查到 ④不带门槛的配方【没有】被凭空加槽。
+    //    ⚠️ 若选一个"全部配方都带门槛"的类型（如 primordial_matter_recombination 19/19），
+    //       第 ④ 件事在游戏里就验不了。这是刻意挑的。
+    //
+    // 🟢 铺开到全部 8 个类型 = 把下面数组里那 7 行注释放开，一行不用改别的。
+    //    其余 7 个门槛类型：PRIMORDIAL_MATTER_RECOMBINATION / PHOTON_SEPARATION / SPACETIME_DISTORTION /
+    //    WL_BOARD_CIRCUIT_ASSEMBLY / INTERSTELLAR_MATTER_ABSORPTION / MATTER_FLOW_CONDENSATION / PHOTON_SIPHON。
+    //
+    // 🔴 2026-10-01 状态更新（**覆盖上面「8 个类型 / 那张数组」的口径；旧文按要求原样保留**）：
+    //    范围已从「手工白名单」改成 **【全部山海配方类型】**（用户原话：「你要不然把列表改成
+    //    【全部山海配方类型】吧，这样是不是更方便一些，以后不用补了」）。
+    //    ⇒ 真源 = 注册期自动登记的 {@link #REGISTERED_TYPES}；上面"把注释放开/改数组"那套操作**已作废**，
+    //      不要再照它改。旧的 9 项手工数组原文保留在本方法末尾的「⛔ 旧口径留档」里。
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    private static void installModuleCatalystSlotUi() {
+        // 🔴 2026-10-01 改造：手工白名单 ⇒ 注册期自动收集的【唯一真源】（见字段区那段长注释）。
+        //    范围 = **全部山海配方类型**。用户原话（逐字）：
+        //      「还有那个 jei 的物质模块槽显示，你要不然把列表改成【全部山海配方类型】吧，
+        //        这样是不是更方便一些，以后不用补了」
+        //    🔴 安全性 = ModuleCatalystSlotUI.append 自己按 recipe.conditions 过滤：
+        //    **没有 ModuleLevelCondition 的配方一个槽都不加**（离线实测读数见
+        //    handoff\outbound\展示槽-全类型挂载.md §3）⇒「全挂」只等于「每个类型都有机会长槽」，
+        //    不等于「每个配方页都会多东西」。
+        final List<GTRecipeType> types = new ArrayList<>(REGISTERED_TYPES);
+        int ok = 0;
+        final StringBuilder detail = new StringBuilder();
+        final StringBuilder notInstalled = new StringBuilder();
+        for (GTRecipeType type : types) {
+            if (type == null) {
+                notInstalled.append("[null], ");
+                continue;
+            }
+            if (com.shanhai.integration.jei.ModuleCatalystSlotUI.install(type)) {
+                ok++;
+                if (detail.length() > 0) {
+                    detail.append(", ");
+                }
+                detail.append(type.registryName);
+            } else {
+                notInstalled.append(type.registryName).append(", ");
+            }
+        }
+        ShanhaiMod.LOGGER.info("[SHANHAI-JEI] 模块催化剂展示槽已挂：{}/{} 个配方类型"
+                        + "（2026-10-01 起 =【全部山海配方类型】；真源 = 注册期自动登记的 REGISTERED_TYPES，"
+                        + "没有任何手工清单 ⇒ 以后新增配方类型不用改这里）；"
+                        + "已挂 = [{}]；未挂 = [{}]（未挂必须是空表，否则说明 install 抛了）；"
+                        + "配方数据一个字未动（只插展示层 CATALYST 槽，不占输入槽、不参与匹配）；"
+                        + "⚠️ uiBuilder 是【每个类型各一份】的实例字段（GTRecipeType.recipeUI，javap 实证）"
+                        + "⇒ 不存在「挂一个类型、别的类型也长出槽」的泄漏",
+                ok, types.size(), detail, notInstalled);
+
+        // ⛔ 旧口径留档（2026-09-30 竖切 → 铺开 8 个 → 2026-10-01 补第 9 个）——【原文逐字保留】。
+        //    留它的理由：下面这份手工数组就是当天那个 bug 的现场（漏了 worldline_cutting），
+        //    也是「为什么必须换成自动真源」的证据。本工程惯例：改判时旧文不删，只加注。
+        //          final GTRecipeType[] types = {
+        //                  PRIMORDIAL_SINGULARITY_INVERSION,
+        //                  // 🔴 2026-09-30 铺开（用户 2026-09-30 原话：「jei是成功了一半，有些配方可以显示物质模块，有些不可以」）——
+        //                  //    竖切那一版只挂了 1 个类型 ⇒ "有些能看、有些不能看"是这个范围造成的，不是坏。
+        //                  //    现在把剩下的 7 个「带等级门槛的配方类型」全部放开（一个数字都没硬编码：
+        //                  //    槽里的模块仍然逐条取自 recipe.conditions，不带门槛的配方仍然一个槽都不加）。
+        //                  PRIMORDIAL_MATTER_RECOMBINATION,
+        //                  PHOTON_SEPARATION,
+        //                  SPACETIME_DISTORTION,
+        //                  WL_BOARD_CIRCUIT_ASSEMBLY,
+        //                  INTERSTELLAR_MATTER_ABSORPTION,
+        //                  MATTER_FLOW_CONDENSATION,
+        //                  PHOTON_SIPHON,
+        //                  // 🔴 2026-10-01 补第 9 个（用户实测回报第 ⑤ 条的根因，逐字证据见下）。
+        //                  //
+        //                  // 用户原话（逐字）：「5：就是我要的是这个东西（如图5），而这个配方【没有显示这个】（如图6）」
+        //                  //   · 图5 = 「原初物质重组」（`gtceu:primordial_matter_recombination` 1/4）——
+        //                  //     鼠标正停在展示槽上，弹的提示是「催化剂：基础物质模块（不占输入槽·不消耗）」
+        //                  //     （这一行**全工程只有** ModuleCatalystSlotUI.buildTooltip 产出）⇒ 那一页【有】槽；
+        //                  //   · 图6 = 「原初世线切割」（`gtceu:worldline_cutting` 1/1）—— 右下角只有 JEI 自己的
+        //                  //     书签/「+」两个按钮，没有我们的 18×18 槽 ⇒ 那一页【没有】槽。
+        //                  // ⇒ 这两个类型此前都【不在】上面那张表里 —— 上面那行注释自称"铺开到全部带门槛类型"，
+        //                  //   但那是**手工列举**，实际漏了 `worldline_cutting` 一个。
+        //                  //
+        //                  // 🔴 漏挂的判据（三条独立证据，不是推断）：
+        //                  //   ① 代码：上面 8 项里没有 WORLDLINE_CUTTING；
+        //                  //   ② 运行期日志（2026-10-01 14:15:17，`GTL山海9.10test\logs\latest.log`）：
+        //                  //      `[SHANHAI-JEI] 模块催化剂展示槽已挂：8/8 … 已挂 = [gtceu:primordial_singularity_inversion,
+        //                  //       gtceu:primordial_matter_recombination, gtceu:photon_separation, gtceu:spacetime_distortion,
+        //                  //       gtceu:wl_board_circuit_assembly, gtceu:interstellar_matter_absorption,
+        //                  //       gtceu:matter_flow_condensation, gtceu:photon_siphon]`
+        //                  //      —— 列表里逐字没有 `gtceu:worldline_cutting`；
+        //                  //   ③ 反查三个山海配方脚本里所有 `moduleLevelRequirement:` 并按类型归并 ⇒
+        //                  //      **带门槛的类型共 9 个**，与 8 项数组做差，缺的正好是 `worldline_cutting`
+        //                  //      （它那条配方 `shanhai:pf/thread_shard_1` 的门槛 = `1x shanhai:material_deduction_module`）。
+        //                  //
+        //                  // ⚠️ 安全性（就地核实过，不是假设）：`WORLDLINE_CUTTING` 在**本方法之前**的 `init()`
+        //                  //    （本文件 :834）注册 ⇒ 走到这里字段必非 null，不会被下面 `if (type == null) continue;`
+        //                  //    静默跳过（那正是本工程"悄悄不发生"型失败的高发点）。
+        //                  //
+        //                  // ✅ 改完的机器可验判据：重进游戏后那行日志应变成 `9/9`，且 `已挂 = [...]` 末尾多出
+        //                  //    `gtceu:worldline_cutting`；同时会多出一条
+        //                  //    `催化剂展示槽已挂上（配方页）：recipe=shanhai:pf/thread_shard_1 module=shanhai:material_deduction_module`
+        //                  //    （日志按 recipe.id 去重，这一条此前从未出现过）。
+        //                  WORLDLINE_CUTTING,
+        //          };
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════════════════
@@ -1273,7 +1668,30 @@ public final class ShanhaiRecipeTypes {
      * 本工程为此付过账。改类型数量时两处必须同步。
      */
     private static int countMissingReal() {
-        GTRecipeType[] all = {
+        GTRecipeType[] all = declaredRealTypes();
+        int missing = 0;
+        for (GTRecipeType t : all) {
+            if (t == null) {
+                missing++;
+            }
+        }
+        return missing;
+    }
+
+    /**
+     * 🔴 <b>【手工声明清单】</b>——{@link #countMissingReal()} 的判据表（"每条声明的字段都拿到了句柄吗"）。
+     *
+     * <p>⚠️ <b>它不是"全部山海配方类型"的真源</b>（那个是 {@link #REGISTERED_TYPES}，注册期自动登记）。
+     * 两者分工：
+     * <ul>
+     *   <li>{@link #declaredRealTypes()} = <b>声明</b>：本文件里逐条写下的类型字段，用来查"句柄是不是 null"；</li>
+     *   <li>{@link #REGISTERED_TYPES} = <b>实际注册</b>：注册入口 {@code register(...)} 当场登记的返回值。</li>
+     * </ul>
+     * <p>🔴 2026-10-01 起两者<b>互钉</b>（见 {@link #assertTypeListsConsistent()}）：
+     * 一张表里有、另一张没有 ⇒ 当场 fail-fast，<b>不再有"只查一部分、其余静默缺失"的缝</b>。
+     */
+    private static GTRecipeType[] declaredRealTypes() {
+        return new GTRecipeType[]{
                 PRIMORDIAL_MATTER_RECOMBINATION, PRIMORDIAL_STELLAR_REACTION, PRIMORDIAL_POWER_GENERATOR,
                 PRIMORDIAL_BIOLOGICAL_CORE, PRIMORDIAL_CAUSAL_WEAVING, PRIMORDIAL_SINGULARITY_INVERSION,
                 WORLDLINE_OSCILLATION_COLLECTION, INTERSTELLAR_MATTER_ABSORPTION, PRIMORDIAL_ENERGY_ABSORPTION,
@@ -1281,7 +1699,8 @@ public final class ShanhaiRecipeTypes {
                 MATTER_FORGING, WL_BOARD_CIRCUIT_ASSEMBLY, WL_BOARD_WAFER_ETCHING, TAIXU_SMELTING,
                 // ───── 2026-09-26 恢复的 24 条（用户点单"40 条"）─────
                 PROXY_EXECUTION, COIN_FORGE, NINE_INDUSTRIAL,
-                BLACK_HOLE_EVENT_HORIZON_BLAST, BLACK_HOLE_NEUTRONIUM_COMPRESSOR, BLACK_HOLE_COMPRESSOR,
+                BLACK_HOLE_EVENT_HORIZON_BLAST, BLACK_HOLE_NEUTRONIUM_COMPRESSOR,
+                BLACK_HOLE_COMPRESSOR,
                 HIGH_DIMENSIONAL_FRAGMENT_CUTTING, WORLDLINE_CUTTING, WORLDLINE_SAMPLING,
                 WORLDLINE_MATTER_RECURRENCE, WORLDLINE_PROBABILITY_CRACKING,
                 PHOTON_SIPHON, ZERO_POINT_CONVERSION, MATTER_AGGREGATION,
@@ -1290,13 +1709,69 @@ public final class ShanhaiRecipeTypes {
                 PRIMORDIAL_MYRIAD_ASCENSION_TIER_1, PRIMORDIAL_MYRIAD_ASCENSION_TIER_2,
                 KU_MING_YUAN_YANG, SPACETIME_DISTORTION,
                 // ───── 2026-09-26 新增的第 41 条（用户点单「原初物质解构」）─────
-                PRIMORDIAL_MATTER_DECONSTRUCTION};
-        int missing = 0;
-        for (GTRecipeType t : all) {
-            if (t == null) {
-                missing++;
+                PRIMORDIAL_MATTER_DECONSTRUCTION,
+                // ───── 🆕 2026-09-30 新增的第 42／43 条（用户点单「原初激光蚀刻」＋「原初蜂群铸造」）─────
+                PRIMORDIAL_LASER_ETCHING, PRIMORDIAL_SWARM_CASTING,
+                // ───── 🆕 2026-10-01 新增的第 44 条（用户点单「原初物质定型」）─────
+                PRIMORDIAL_MATTER_FORMING};
+    }
+
+    /**
+     * 🔴 <b>2026-10-01 新增：两张清单互相钉死（就地 fail-fast）。</b>
+     *
+     * <p>判据三条，任一不成立就<b>当场抛</b>——因为它们的后果都是"静默少挂一个类型"，
+     * 而"静默"正是本工程付过账的那类失败（当天用户报的 JEI 展示槽漏挂就是这个形态）：
+     * <ol>
+     *   <li>{@link #REGISTERED_TYPES} 条数 == {@link #REAL_TYPE_COUNT}；
+     *       <b>不等 ⇒ 有人加了类型却没走 {@code register(...)} 入口</b>（JEI 会漏挂它）或走了入口却没同步常量。</li>
+     *   <li>{@link #declaredRealTypes()} 条数 == {@link #REAL_TYPE_COUNT}（原有口径，保持）。</li>
+     *   <li>两张表<b>逐条互为子集</b>（按对象身份比）：
+     *       声明表里有而自动登记里没有 ⇒ <b>该类型绕过了 {@code register(...)}</b>；
+     *       自动登记里有而声明表没有 ⇒ {@code countMissingReal()} 对它静默不查。</li>
+     * </ol>
+     * <p>⚠️ 本方法<b>只读</b>，不改变任何注册行为；它唯一的作用是"让漏挂变成开局即崩"。
+     */
+    private static void assertTypeListsConsistent() {
+        final GTRecipeType[] declared = declaredRealTypes();
+        final List<GTRecipeType> collected = REGISTERED_TYPES;
+
+        if (collected.size() != REAL_TYPE_COUNT) {
+            throw new IllegalStateException("[SHANHAI] 配方类型注册口径不一致（自动登记 vs 常量）："
+                    + "REGISTERED_TYPES=" + collected.size() + "，REAL_TYPE_COUNT=" + REAL_TYPE_COUNT
+                    + "。⇒ 新增类型必须走本文件的 register(name, category) 入口（它才会自动登记）；"
+                    + "若确实新增了类型，请同步 REAL_TYPE_COUNT 与 declaredRealTypes()。"
+                    + "已登记 = " + collected);
+        }
+        if (declared.length != REAL_TYPE_COUNT) {
+            throw new IllegalStateException("[SHANHAI] 配方类型注册口径不一致（声明表 vs 常量）："
+                    + "declaredRealTypes()=" + declared.length + "，REAL_TYPE_COUNT=" + REAL_TYPE_COUNT
+                    + "。⇒ 改类型数量必须同时改这两处（否则 fail-fast 只查一部分、其余静默缺失）。");
+        }
+
+        final Set<GTRecipeType> declaredSet = Collections.newSetFromMap(new IdentityHashMap<>());
+        Collections.addAll(declaredSet, declared);
+        for (GTRecipeType t : declared) {
+            if (t != null && !containsIdentity(collected, t)) {
+                throw new IllegalStateException("[SHANHAI] 配方类型注册口径不一致：声明表里有 "
+                        + t.registryName + "，但它不在 REGISTERED_TYPES 里 ⇒ 这个类型绕过了 register(...) 入口，"
+                        + "后果 = JEI 的物质模块展示槽会漏挂它（2026-10-01 那个 bug 的同款）。");
             }
         }
-        return missing;
+        for (GTRecipeType t : collected) {
+            if (t != null && !declaredSet.contains(t)) {
+                throw new IllegalStateException("[SHANHAI] 配方类型注册口径不一致：REGISTERED_TYPES 里有 "
+                        + t.registryName + "，但 declaredRealTypes() 里没有 ⇒ countMissingReal() 对它静默不查。");
+            }
+        }
+    }
+
+    /** 按对象身份（不是 equals）判断 list 里有没有这个类型。 */
+    private static boolean containsIdentity(List<GTRecipeType> list, GTRecipeType type) {
+        for (GTRecipeType t : list) {
+            if (t == type) {
+                return true;
+            }
+        }
+        return false;
     }
 }

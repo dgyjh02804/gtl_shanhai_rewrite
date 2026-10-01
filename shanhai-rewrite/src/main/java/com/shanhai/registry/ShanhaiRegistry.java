@@ -13,6 +13,7 @@ import com.shanhai.item.ShanhaiCreativeModeTabs;
 import com.shanhai.item.ShanhaiItems;
 import com.shanhai.machine.ShanhaiMachines;
 import com.shanhai.machine.module.ModuleRegistry;
+import com.shanhai.machine.wildcard.ShanhaiWildcardMachines;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
@@ -206,16 +207,28 @@ public final class ShanhaiRegistry {
      * 谁先谁后都不影响 24 台模块与主机。
      */
     public static void onRecipeTypeRegister(GTCEuAPI.RegisterEvent<ResourceLocation, GTRecipeType> event) {
-        // ⑤ 全部 76 条配方类型（40 真类型 + 36 显示类型）—— 逐条照抄原版 DShanhaiRecipeTypes。
+        // ⑤ 全部 41 条真类型（显示类型 0 条）—— 逐条照抄原版 DShanhaiRecipeTypes 的<b>真类型</b>部分。
+        //    ⚠️ 2026-09-27 订正：本行原文写「全部 76 条配方类型（40 真类型 + 36 显示类型）」，
+        //       这三个数<b>全部作废</b>：真类型实为 41 条（第 41 条 = primordial_matter_deconstruction，
+        //       2026-09-26 用户点单），36 个 GTNH 显示类型已<b>整组删除</b>（NINE_INDUSTRIAL_MODES /
+        //       DISPLAY_TYPE_COUNT / countMissingDisplay() 都不复存在），故显示类型为 0。
+        //       权威数字以 ShanhaiRecipeTypes.REAL_TYPE_COUNT（= 41）为准，不要再手写条数。
         ShanhaiRecipeTypes.init();
     }
 
     /**
-     * CommonSetup（全部注册表已冻结）兜底：16 条配方类型句柄必须全部就位。
+     * CommonSetup（全部注册表已冻结）兜底：41 条真类型句柄必须全部就位。
      *
      * <p>🔴 <b>2026-09-23 订正</b>（用户裁决裁剪配方类型注册后）：本方法原先按「76 条」校验，
-     * 现改为按 {@code ShanhaiRecipeTypes.REAL_TYPE_COUNT}（=<b>16</b>）；
+     * 现改为按 {@code ShanhaiRecipeTypes.REAL_TYPE_COUNT}（=<b>41</b>）；
      * 36 个显示类型整组删除 ⇒ <b>不再有"显示类型"这一路校验，也不再引用 {@code NINE_INDUSTRIAL_MODES}</b>。
+     *
+     * <p>⚠️ <b>2026-09-27 二次订正</b>：上面那句里的「=<b>41</b>」当时写的是「=<b>16</b>」，
+     * 而且本段首句当时写「16 条配方类型句柄」—— 两个 16 都已作废：
+     * {@code REAL_TYPE_COUNT} 早已随第 41 条（{@code primordial_matter_deconstruction}，
+     * 2026-09-26 用户点单）改成 <b>41</b>，而「16」是 2026-09-23 裁剪后的<b>中间态</b>。
+     * 现状：真类型 <b>41</b> 条 / 显示类型 <b>0</b> 条（36 个 GTNH 显示类型已整组删除）。
+     * ⇒ 别再手写条数，一律引用 {@code ShanhaiRecipeTypes.REAL_TYPE_COUNT}。
      * 这是 CommonSetup 的<b>硬失败</b>，写错会直接崩在启动期 —— 故本方法内的每个符号都必须是存活字段。
      *
      * <p>「配方类型没注册上」这类失败在日志里与「注册上了」长得一模一样（都是什么都没发生），
@@ -246,6 +259,11 @@ public final class ShanhaiRegistry {
         ShanhaiMachines.init();
         // ④ 由 ShanhaiMachines.init() 内部调用 ModuleRegistry.init()，
         //    保持与原冻结链完全一致的顺序，只是整体挪到了正确的时机。
+        //
+        // ⑤ 超级通配符ME样板总成（2026-10-01 用户点单）：通配符ME样板总成的全部功能 + 10 个通配符样板槽。
+        //    ⚠️ 必须排在 ShanhaiMachines.init() 之后：后者末尾有「模块表为空就抛」的硬校验，
+        //       那一段的失败语义是"模块链坏了"；把本行插在它前面会让该判据指向错的元凶。
+        ShanhaiWildcardMachines.init();
     }
 
     /** CommonSetup（全部注册表已冻结）兜底：机器定义句柄必须已经就位。 */
@@ -257,6 +275,18 @@ public final class ShanhaiRegistry {
                     + "调用链应为 ShanhaiMod 构造器 → modEventBus.addGenericListener(MachineDefinition.class, "
                     + "ShanhaiRegistry::onMachineRegister) → ShanhaiMachines.init()。"
                     + "若 GTCEu 改了事件类型/泛型，这里会当场炸，而不是让主机在游戏里静默消失。");
+        }
+        // 超级通配符ME样板总成：同一道兜底。
+        // 🔴 为什么必须在这里硬失败：这台仓室「没注册上」在日志里与「注册上了」长得一模一样
+        //    （都是什么都没发生），但宿主 KubeJS 的无限元件物品列表【按字符串 id】引用它
+        //    （kubejs:super_ae_infinite_cell 的 KeyList）⇒ 缺了就是 KeyList 里一条
+        //    AEKeyHelper.item(...) 解析到 null 的异常，会把整段启动脚本一起带下去 ——
+        //    那是「悄悄不发生」，本工程最忌讳的一类失败。
+        if (ShanhaiWildcardMachines.superWildcardPatternBuffer() == null) {
+            throw new IllegalStateException("[SHANHAI] 仓室 shanhai:"
+                    + ShanhaiWildcardMachines.SUPER_WILDCARD_PATTERN_BUFFER_ID
+                    + " 没有被注册：调用链应为 ShanhaiMod 构造器 → modEventBus.addGenericListener("
+                    + "MachineDefinition.class, ShanhaiRegistry::onMachineRegister) → ShanhaiWildcardMachines.init()。");
         }
     }
 }

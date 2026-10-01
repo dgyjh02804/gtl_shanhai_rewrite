@@ -4,6 +4,7 @@ import com.gregtechceu.gtceu.api.machine.MachineDefinition;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gregtechceu.gtceu.api.recipe.condition.RecipeConditionType;
 import com.mojang.logging.LogUtils;
+import com.shanhai.common.recipe.PrimordialFormingRecipeProbe;
 import com.shanhai.config.ShanhaiConfig;
 import com.shanhai.machine.module.ModuleSetBlockWatch;
 import com.shanhai.machine.module.ModuleSlotWatch;
@@ -136,6 +137,20 @@ public class ShanhaiMod {
         //    ⚠️ 自证【不能】放在本构造器里：冒烟实测那一拍 LevelChunk 还没被混入，反射看到的是未混入的类
         //    ⇒ 会打出一条假阴性的「探针未挂上」。⇒ 挂到 ServerStartedEvent（见 ModuleSetBlockWatch#onServerStarted）。
         MinecraftForge.EVENT_BUS.addListener(ModuleSetBlockWatch::onServerStarted);
+
+        // 🔴 取证探针 [SHANHAI-PFORM]（2026-10-01）：新类型「原初物质定型的配方进没进配方表」。
+        //    ⚠️ 2026-10-01 迁移后更新：这 2457 条的正文【已从数据包搬到 KubeJS】
+        //    （kubejs\server_scripts\[server_scripts]shanhai_primordial_forming.js），
+        //    数据包那边已搬走。探针本身【不用改】—— 它读的是服务器自己的 RecipeManager，
+        //    数据包配方与 KJS 配方落进的是同一个桶。
+        //    这条链上"配方被静默丢弃"与"全部加载成功"在日志上长得一模一样
+        //    ⇒ 在 ServerStartedEvent 上【现数一遍】并打出可比对的数字（只读，不写配方表）。
+        //    ⚠️ 用不带优先级的 addListener（与上面两条探针同款，已实测能编译）：
+        //       "原有两类型条数"因此可能早于 KubeJS 的 ServerEvents.loaded —— 那一条只作参考口径，
+        //       主判据（新类型条数）不受影响，因为没有任何脚本会动它。
+        MinecraftForge.EVENT_BUS.addListener(PrimordialFormingRecipeProbe::onServerStarted);
+        LOGGER.info("{} 配方条数探针已挂上 FORGE 事件总线（只读；判据 = 新类型条数 == 声明值 且 模头残留 = 0）",
+                PrimordialFormingRecipeProbe.PREFIX);
 
         LOGGER.info("[SHANHAI] {} 已加载（阶段 1）", MOD_ID);
     }

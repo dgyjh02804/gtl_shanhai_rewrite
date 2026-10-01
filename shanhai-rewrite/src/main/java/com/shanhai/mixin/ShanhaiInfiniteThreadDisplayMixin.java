@@ -4,9 +4,12 @@ import com.gregtechceu.gtceu.api.blockentity.MetaMachineBlockEntity;
 import com.gregtechceu.gtceu.integration.jade.provider.ParallelProvider;
 import com.shanhai.ShanhaiMod;
 import com.shanhai.common.machine.PrimordialOmegaEngineMachine;
+import com.shanhai.common.recipe.PrimordialRecipeEffects;
+import com.shanhai.common.thread.ShanhaiParallelBudget;
 import com.shanhai.machine.module.PrimordialModuleMachine;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -15,6 +18,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import snownee.jade.api.BlockAccessor;
+import snownee.jade.api.ITooltip;
+import snownee.jade.api.config.IPluginConfig;
 
 /**
  * 山海重构 · 让抬头（Jade）显示「并行」与「跨配方线程」两行 —— <b>主机 + 24 台原初模块</b>。
@@ -269,6 +274,26 @@ public class ShanhaiInfiniteThreadDisplayMixin {
         final boolean infinite = PrimordialModuleMachine.isInfiniteParallel(parallel);
         data.putLong("parallel", infinite ? SHANHAI$INFINITE : parallel);
         data.putLong("threads", threads);
+        // 🔴 2026-09-30（同日第二轮）用户拍板：「…然后 jade 写一下提示，这样不会引起误解」。
+        //    这里【只写数据】，文案与渲染在 {@link #shanhai$longScaleDurationHint}（客户端侧 @Inject TAIL）。
+        //    判据取【并行预算进 long 档】（> 2147483647），与 ModuleRegistry 里那一步用的是**同一个纯函数**
+        //    ⇒ 不会出现"提示说已抬下限、机器其实没抬"这种漂移（本工程最忌讳的静默分叉）。
+        //    ⚠️ 必须在服务端算：currentParallel 不是 @DescSynced 字段，客户端读到的是字段初值 64。
+        final long parallelBudget = PrimordialModuleMachine.totalParallelLimitFor(
+                module.getCurrentParallel(), module.getCrossRecipeThreads());
+        if (PrimordialRecipeEffects.isLongScaleParallel(parallelBudget)) {
+            data.putInt(SHANHAI$MIN_DURATION_KEY, PrimordialRecipeEffects.LONG_SCALE_MIN_DURATION);
+            // 🔴 2026-09-30（同日第三轮）：用户报「它没有到 10 tick」—— 抬头写了 10 tick、配方还是 1 tick。
+            //   根因（本次定位）= 上面那行判据只读了【预算 > 阈值】这一件事，**从没读过配方自己的时长**
+            //   ⇒ 只要下限那一步没真的改写时长（或只改了设计上不该改的情形），提示就在说谎。
+            //   本工程纪律「活的界面上不许放假数据」⇒ 现在**把实际时长一并带过去**，
+            //   由客户端按真值决定写"已达"还是写"未生效"（见 #shanhai$longScaleDurationHint）。
+            //   ⚠️ 服务端取真值：`lastRecipe` 不是 @DescSynced，客户端读到的是 null。
+            final com.gregtechceu.gtceu.api.machine.trait.RecipeLogic hintLogic = module.getRecipeLogic();
+            final com.gregtechceu.gtceu.api.recipe.GTRecipe hintRecipe =
+                    hintLogic == null ? null : hintLogic.getLastRecipe();
+            data.putInt(SHANHAI$ACTUAL_DURATION_KEY, hintRecipe == null ? -1 : hintRecipe.duration);
+        }
         if (!shanhai$moduleAnnounced) {
             shanhai$moduleAnnounced = true;
             ShanhaiMod.LOGGER.info("[SHANHAI-DISPLAY] 已写入模块 Jade 真值：parallel={}（写入 {}；{}）threads={}"
@@ -282,4 +307,114 @@ public class ShanhaiInfiniteThreadDisplayMixin {
     /** 只打一次，避免 Jade 每次刷新都刷屏（与主机那条同一个理由）。 */
     @Unique
     private static boolean shanhai$moduleAnnounced = false;
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    //  2026-09-30（同日第二轮）：抬头加一行「已达最小配方时长 10 tick」提示
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 承载那一行提示的服务端 NBT 键（值 = 实际生效的最小时长，单位 tick）。
+     *
+     * <p><b>为什么走"服务端写键 / 客户端读键"这条路</b>：Jade 的 {@code appendTooltip} 只在
+     * <b>客户端</b>跑，而判定要用的 {@code currentParallel} 在 {@link PrimordialModuleMachine} 里
+     * <b>不是</b> {@code @DescSynced} 字段（只有 {@code parallelOverride} 是）⇒ 客户端读到的是字段初值，
+     * 会得到"提示该显示却不显示"的假否定。服务端算、键带过来，两侧用的是同一个数。
+     */
+    @Unique
+    private static final String SHANHAI$MIN_DURATION_KEY = "shanhai_min_recipe_duration_ticks";
+
+    /**
+     * 承载<b>配方实际时长</b>的服务端 NBT 键（值 = {@code logic.getLastRecipe().duration}；
+     * {@code -1} 表示当时没有在跑的配方）。
+     *
+     * <p>🔴 2026-09-30（同日第三轮）新增。理由见上面写入处的注释：抬头的文案必须以**真值**为准，
+     * 不许由"预算过了阈值"直接推出"时长已经抬到 10"。
+     */
+    @Unique
+    private static final String SHANHAI$ACTUAL_DURATION_KEY = "shanhai_actual_recipe_duration_ticks";
+
+    /** 只打一次（同上）。 */
+    @Unique
+    private static boolean shanhai$durationHintAnnounced = false;
+
+    /**
+     * <b>用户 2026-09-30 原话（逐字）</b>：
+     * <blockquote>「对了，这个配方加到 long 之后可以加一个最小配方时长为 10tick，然后 jade 写一下提示，
+     * 这样不会引起误解」</blockquote>
+     *
+     * <h2>这一行说的是什么</h2>
+     * 当本台模块的并行预算越过 2147483647（= 原原生链的 int 天花板，也就是"进了 long 档"）时，
+     * 配方时长会被 {@code PrimordialRecipeEffects#applyLongScaleDurationFloor} 抬到
+     * <b>不小于 10 tick</b>。玩家抬头看到「同时处理至多【无限】个配方」时，会以为
+     * "无限并行 + 1 tick"= 机器坏了／卡住；这一行是**解释**，不是数值。
+     *
+     * <p>🔴 <b>2026-09-30 同日第四轮（用户拍板「B. 破一次红线，让那 25 台也抬到 10」）</b>：
+     * 下限从 {@code min(10, 原时长)} 改成 <b>绝对 10</b> ⇒ 原时长 1 tick 的配方（引擎链 25 台）
+     * 现在**也会**真的到 10。新红线措辞（逐字，见 {@code ShanhaiDurationFloor} 类注释）：
+     * 「只有「进了 long 档」（并行预算 &gt; 2,147,483,647）时，配方时长才允许被抬到 10 tick；
+     * 其余一切情形，配方时长仍不许超过配方定义的原时长。」
+     * 本行的三分支因此**照旧成立**：{@code 下限} 这个数现在恒为 10 ⇒ 只要机器真的到了 10 就写「已达」，
+     * 没到就**如实**写「未生效」（这正是第四轮之前那版假提示的病，别改回去）。
+     *
+     * <h2>为什么挂在 {@code ParallelProvider} 而不是另起一个 provider</h2>
+     * 那两行（并行上限 / 跨配方线程）本来就由这个 provider 画，提示紧挨着它们才读得通；
+     * 而且本类已经 {@code @Inject} 在它的 {@code appendServerData} 上（同一个 mixin、同一个目标类），
+     * <b>不新增 mixin 类、不动 mixin 配置</b>。
+     *
+     * <h2>⚠️ 与 gtladditions 的 {@code @Overwrite} 共存</h2>
+     * 上游用 {@code @Overwrite} 整体替换了 {@code appendTooltip}；本类的 {@code @Inject(TAIL)}
+     * 落在**被覆盖之后**的方法体尾部（依据 = Mixin 0.8.5 的 pass 顺序 MAIN→PREINJECT→INJECT，
+     * 见本类开头那段 2026-09-26 的核实，与 {@code appendServerData} 那一条同源）。
+     *
+     * <h2>⚠️ 可验证性边界（诚实声明）</h2>
+     * {@code require = 0} + 纯客户端渲染 ⇒ <b>无头专服冒烟证明不了这一行会出现</b>，
+     * 只能由用户进游戏看一眼。为了不"静默失败"，第一次真正加行时会打一条 INFO（{@code [SHANHAI-DISPLAY]}）。
+     */
+    @Inject(
+            method = "appendTooltip(Lsnownee/jade/api/ITooltip;Lsnownee/jade/api/BlockAccessor;Lsnownee/jade/api/config/IPluginConfig;)V",
+            at = @At("TAIL"),
+            remap = false,
+            require = 0)
+    private void shanhai$longScaleDurationHint(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config,
+                                               CallbackInfo ci) {
+        try {
+            if (tooltip == null || accessor == null) {
+                return;
+            }
+            final CompoundTag data = accessor.getServerData();
+            if (data == null || !data.contains(SHANHAI$MIN_DURATION_KEY, 3)) {
+                return;
+            }
+            final int minDuration = data.getInt(SHANHAI$MIN_DURATION_KEY);
+            if (minDuration <= 0) {
+                return;
+            }
+            final String ceiling = String.format(java.util.Locale.ROOT, "%,d",
+                    ShanhaiParallelBudget.NATIVE_INT_CEILING);
+            // 🔴 2026-09-30（同日第三轮）：**以实际时长为准**。用户原话「它没有到 10 tick」——
+            //   旧版这里无条件写「已达最小配方时长 10 tick」，而配方其实还是 1 tick ⇒ 假提示，
+            //   比没有提示更糟（它会让用户以为已经修好了、不再往下查）。
+            final int actual = data.contains(SHANHAI$ACTUAL_DURATION_KEY, 3)
+                    ? data.getInt(SHANHAI$ACTUAL_DURATION_KEY) : -1;
+            if (actual >= minDuration) {
+                tooltip.add(Component.literal("§7已达最小配方时长 §6" + minDuration
+                        + " tick §7（并行极高：已超过 §6" + ceiling + "§7）"));
+            } else if (actual > 0) {
+                // 预算进了 long 档、但配方时长还没抬起来 ⇒ 如实画实际值时长的读数，并点明下限没生效。
+                tooltip.add(Component.literal("§7配方时长 §6" + actual + " tick §7（并行极高：已超过 §6"
+                        + ceiling + "§7；长档下限 §6" + minDuration + " tick §7未生效）"));
+            } else {
+                // 没配方在跑 / 读不到 ⇒ 只说"并行极高"，绝不编一个时长出来。
+                tooltip.add(Component.literal("§7并行极高：已超过 §6" + ceiling + "§7"));
+            }
+            if (!shanhai$durationHintAnnounced) {
+                shanhai$durationHintAnnounced = true;
+                ShanhaiMod.LOGGER.info("[SHANHAI-DISPLAY] 已加抬头提示行：实际配方时长={} tick／下限={} tick"
+                        + "（判据 = 并行预算 > {}；actual >= 下限 ⇒ 写「已达」，否则如实写实际值）",
+                        actual, minDuration, ShanhaiParallelBudget.NATIVE_INT_CEILING);
+            }
+        } catch (Throwable ignored) {
+            // 纯显示路径：任何异常都不允许影响游戏（与上面那条注入同纪律）。
+        }
+    }
 }

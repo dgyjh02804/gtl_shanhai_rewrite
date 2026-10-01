@@ -1,13 +1,17 @@
 package com.shanhai.item;
 
+import com.gregtechceu.gtceu.api.machine.MachineDefinition;
 import com.gregtechceu.gtceu.api.machine.MultiblockMachineDefinition;
 import com.shanhai.fluid.ShanhaiFluids;
 import com.shanhai.machine.ShanhaiMachines;
 import com.shanhai.machine.module.ModuleRegistry;
+import com.shanhai.machine.wildcard.ShanhaiWildcardMachines;
 import com.shanhai.registry.ShanhaiRegistration;
+import com.tterrag.registrate.util.entry.ItemEntry;
 import com.tterrag.registrate.util.entry.RegistryEntry;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.Item;
 
 /**
  * 本 mod 自己的创造模式物品栏（{@code shanhai}）—— 18 个物品 + B1a 的 131 个私货物品 + 主机控制器的归属。
@@ -120,23 +124,12 @@ public final class ShanhaiCreativeModeTabs {
         output.accept(ShanhaiItems.MATTER_SINGULARITY.asStack());
 
         // ─── 17 个物质模块：老脚本把它们插在私货物品中间（L970–L1135），等级 1..17 连号 ───
-        output.accept(ShanhaiItems.INTRODUCTORY_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.BASIC_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.MATERIAL_DEDUCTION_MODULE.asStack());
-        output.accept(ShanhaiItems.VIRTUAL_IMAGE_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.TRANSFORMATION_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.DARK_STAR_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.MATERIAL_RECOMBINATION_MODULE.asStack());
-        output.accept(ShanhaiItems.IMAGINARY_MATERIAL_TRANSITION_REMOLDING_MODULE.asStack());
-        output.accept(ShanhaiItems.ZEROING_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.APEX_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.DIMENSIONAL_ASCENSION_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.TRANSFINITE_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.CHAOS_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.ETERNAL_MATERIAL_MODULE.asStack());
-        output.accept(ShanhaiItems.MATERIAL_CREATION_MODULE.asStack());
-        output.accept(ShanhaiItems.REALITY_ANCHOR_MODULE.asStack());
-        output.accept(ShanhaiItems.GENESIS_REALITY_MODIFICATION_MODULE.asStack());
+        // 🔴 2026-10-01（用户点单「给物质流安装物质模块的顺序排序」）：
+        //    这 17 行**改成由 {@link #matterRows()} 单表生成**，与下面那 14 个物质流桶**共用同一张表** ⇒
+        //    「物质流按物质模块顺序排」由构造保证，不可能分叉。**顺序本身一个都没动**（逐行与旧版相同）。
+        for (MatterRow row : matterRows()) {
+            output.accept(row.module().asStack());
+        }
         output.accept(ShanhaiItems.PRIMORDIAL_DIVERGENCE_HEART.asStack());
         output.accept(ShanhaiItems.PRIMORDIAL_ENGINE_CORE.asStack());
 
@@ -260,24 +253,22 @@ public final class ShanhaiCreativeModeTabs {
         output.accept(ShanhaiItems.ETA_MESON.asStack());
         output.accept(ShanhaiItems.UNKNOWN_PARTICLE.asStack());
 
-        // ─── 25 个桶：老脚本的流体注册序（L2720–L2852），同样是原序不是等级序 ───
+        // ─── 25 个桶 ───
+        //     ⛔ 旧序（作废，留档）：… matter_fluid_entry, foundation, basic, virtual, transmutation,
+        //        darkstar, advanced, transition, zero, **ascension, transcend, peak**, eternal, ultimate …
+        //     🔴 2026-10-01：14 个**物质流桶**改为按【物质模块的顺序】排（用户原话「给物质流安装物质模块的
+        //        顺序排序（jei里面的顺序，还有他们对应的桶）」）⇒ 从 {@link #matterRows()} 同一张表生成。
+        //        实测差异只有 3 个：旧序里 `ascension(升维) → transcend(超限) → peak(巅峰)`，
+        //        而物质模块顺序是 `巅峰(apex) → 升维 → 超限` ⇒ 现在**巅峰物质流桶**提前到升维之前。
+        //     其余 11 个非物质流桶**保持原有相对顺序**（只把物质流那一段整体挪到原位）。
         acceptBucket(output, "zero_point_energy");
         acceptBucket(output, "light");
         acceptBucket(output, "liquid_ending");
-        acceptBucket(output, "matter_fluid_entry");
-        acceptBucket(output, "matter_fluid_foundation");
-        acceptBucket(output, "matter_fluid_basic");
-        acceptBucket(output, "matter_fluid_virtual");
-        acceptBucket(output, "matter_fluid_transmutation");
-        acceptBucket(output, "matter_fluid_darkstar");
-        acceptBucket(output, "matter_fluid_advanced");
-        acceptBucket(output, "matter_fluid_transition");
-        acceptBucket(output, "matter_fluid_zero");
-        acceptBucket(output, "matter_fluid_ascension");
-        acceptBucket(output, "matter_fluid_transcend");
-        acceptBucket(output, "matter_fluid_peak");
-        acceptBucket(output, "matter_fluid_eternal");
-        acceptBucket(output, "matter_fluid_ultimate");
+        for (MatterRow row : matterRows()) {
+            if (row.fluidId() != null) {
+                acceptBucket(output, row.fluidId());
+            }
+        }
         acceptBucket(output, "primal_chaos");
         acceptBucket(output, "dimensional_fabric");
         acceptBucket(output, "causal_essence");
@@ -296,6 +287,12 @@ public final class ShanhaiCreativeModeTabs {
         MultiblockMachineDefinition engine = ShanhaiMachines.primordialOmegaEngine();
         if (engine != null) {
             output.accept(engine.asStack());
+        }
+        // 超级通配符ME样板总成（2026-10-01 用户点单）—— 仓室，与主机/模块一样只能靠自己这台栏位
+        // 才看得见（GTCEu 的 MachineBuilder 不会自动塞进任何创造栏；缺了就是"物品在 JEI 里也搜不到"）。
+        MachineDefinition superWildcardBuffer = ShanhaiWildcardMachines.superWildcardPatternBuffer();
+        if (superWildcardBuffer != null) {
+            output.accept(superWildcardBuffer.asStack());
         }
         acceptIfPresent(output, ModuleRegistry.PRIMORDIAL_VOID_INDUCTION_ARMATURE);
         acceptIfPresent(output, ModuleRegistry.PRIMORDIAL_BIOLOGICAL_CORE);
@@ -344,6 +341,62 @@ public final class ShanhaiCreativeModeTabs {
         acceptIfPresent(output, ModuleRegistry.PRIMORDIAL_DEBUG_MODULE);
     }
 
+
+    /**
+     * 🔴 「物质模块 → 它对应的物质流」的<b>唯一真源</b>（2026-10-01 新增，用户点单）。
+     *
+     * <h2>1. 这张表的顺序 = 【物质模块在 JEI 里的显示顺序】= 等级 1..17</h2>
+     * 「物质模块的顺序」的权威来源是<b>本表</b>，而本表的顺序就是 {@code fill()} 里那 17 行的原顺序
+     * （老脚本 L970–L1135 的注册序，未改一个位置）。<b>两条独立旁证</b>证明它就是等级序：
+     * <ol>
+     *   <li>{@code ShanhaiConcurrencyTables.standardParallelTable()} 的并行上限值，
+     *       按本表顺序<b>严格单调递增</b>（128 → 256 → … → {@code Long.MAX_VALUE}）
+     *       ⇒ 「等级」与「本表顺序」同序；</li>
+     *   <li>用户原话把「jei 里面的顺序」直接当成模块顺序 ⇒ 他看到的就是创造栏这一列，
+     *       而 {@code ShanhaiCreativeModeTabs} 的类注释已实证：<b>JEI 物品表是从创造栏 displayItems 建的</b>。</li>
+     * </ol>
+     *
+     * <h2>2. 🔴 为什么模块与流体必须共用这一张表</h2>
+     * 用户要的是「物质流按物质模块的顺序排」。若模块那份顺序与流体那份顺序各写一遍，
+     * 将来加一台模块就<b>必然</b>出现两份顺序分叉（本工程血账：「同一个数被两处各写一份，必然漂移」）
+     * ⇒ 本方法返回的<b>同一张表</b>同时喂给 ①模块那一段 ②物质流桶那一段，顺序由构造保证。
+     *
+     * <h2>3. 配对判据</h2>
+     * 中文名字面呼应（入门↔入门、基础↔基础、推演↔推演、虚像↔虚像、嬗变↔嬗变、暗星↔暗星、
+     * 重组↔重组、虚数跃迁↔虚数物质跃迁重塑、归零↔归零、巅峰↔巅峰、升维↔升维、超限↔超限、
+     * 永恒↔永恒、创造↔物质创造）：<b>14 对 14，无歧义、无一对多</b>。
+     * 17 台模块里另有 3 台<b>没有对应流体</b>（混沌 / 现实锚点 / 创始现实修改）⇒ {@code fluidId = null}，
+     * <b>不编造</b>一条不存在的流体。
+     *
+     * <h2>4. 为什么是「方法」而不是「静态字段」</h2>
+     * 静态字段会在 {@code ShanhaiCreativeModeTabs} 的类初始化期就去触碰 {@code ShanhaiItems} 的静态字段，
+     * 从而把物品注册的时机提前到「创造栏注册之前」—— <b>那是一次没人要求过的初始化顺序变更</b>。
+     * 写成方法 ⇒ 只在 {@code fill()} 被调用时（那时物品早已注册完）取表，<b>零时序影响</b>。
+     */
+    private static MatterRow[] matterRows() {
+        return new MatterRow[] {
+                new MatterRow(ShanhaiItems.INTRODUCTORY_MATERIAL_MODULE, "matter_fluid_entry"),
+                new MatterRow(ShanhaiItems.BASIC_MATERIAL_MODULE, "matter_fluid_foundation"),
+                new MatterRow(ShanhaiItems.MATERIAL_DEDUCTION_MODULE, "matter_fluid_basic"),
+                new MatterRow(ShanhaiItems.VIRTUAL_IMAGE_MATERIAL_MODULE, "matter_fluid_virtual"),
+                new MatterRow(ShanhaiItems.TRANSFORMATION_MATERIAL_MODULE, "matter_fluid_transmutation"),
+                new MatterRow(ShanhaiItems.DARK_STAR_MATERIAL_MODULE, "matter_fluid_darkstar"),
+                new MatterRow(ShanhaiItems.MATERIAL_RECOMBINATION_MODULE, "matter_fluid_advanced"),
+                new MatterRow(ShanhaiItems.IMAGINARY_MATERIAL_TRANSITION_REMOLDING_MODULE, "matter_fluid_transition"),
+                new MatterRow(ShanhaiItems.ZEROING_MATERIAL_MODULE, "matter_fluid_zero"),
+                new MatterRow(ShanhaiItems.APEX_MATERIAL_MODULE, "matter_fluid_peak"),
+                new MatterRow(ShanhaiItems.DIMENSIONAL_ASCENSION_MATERIAL_MODULE, "matter_fluid_ascension"),
+                new MatterRow(ShanhaiItems.TRANSFINITE_MATERIAL_MODULE, "matter_fluid_transcend"),
+                new MatterRow(ShanhaiItems.CHAOS_MATERIAL_MODULE, null),
+                new MatterRow(ShanhaiItems.ETERNAL_MATERIAL_MODULE, "matter_fluid_eternal"),
+                new MatterRow(ShanhaiItems.MATERIAL_CREATION_MODULE, "matter_fluid_ultimate"),
+                new MatterRow(ShanhaiItems.REALITY_ANCHOR_MODULE, null),
+                new MatterRow(ShanhaiItems.GENESIS_REALITY_MODIFICATION_MODULE, null),
+        };
+    }
+
+    /** 一行：一台物质模块 ＋ 它对应的物质流 id（{@code null} = 该模块没有对应流体）。 */
+    private record MatterRow(ItemEntry<Item> module, String fluidId) {}
 
     /**
      * 把一个桶放进创造栏。桶句柄是懒解析的（{@link ShanhaiFluids#bucketStack(String)}），

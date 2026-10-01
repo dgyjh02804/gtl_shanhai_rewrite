@@ -11,7 +11,8 @@
     "ShanhaiSetBlockWatchMixin"
   ],
   "client": [
-    "ShanhaiFontStyleMixin"
+    "ShanhaiFontStyleMixin",
+    "ShanhaiJeiRecipeOrderMixin"
   ],
   "injectors": {
     "defaultRequire": 1

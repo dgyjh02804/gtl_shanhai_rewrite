@@ -1,13 +1,34 @@
-// id existence check for every item/fluid id appearing in the 38 patterns.
+// id existence check for every item/fluid id appearing in the patterns of rows.json.
 // Positive sources only (per project rule): never claim "missing" from one stale table.
 //   ① local\kubejs\export\registries\item.json / fluid.json   (game-emitted snapshot, 2026-09-10)
 //   ② mods\shanhai-0.1.0.jar!assets/shanhai/lang/zh_cn.json   (deployed jar, 2026-09-26)
 //   ③ mods\gtceu-1.20.1-1.4.4.jar!assets/gtceu/lang/zh_cn.json
 'use strict'
 var fs = require('fs')
-var BASE = 'C:\\Users\\david\\Desktop\\构建\\shanhai重构\\recipe-convert\\'
-var V = 'C:\\Users\\david\\Desktop\\65866652\\日常\\versions\\GTL山海9.10test\\'
+var path = require('path')
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔴 路径来源纪律（上传前清理）：本仓库里【不写任何机器绝对路径】。
+//    · 仓库【内】的路径 ⇒ 按【脚本自身位置】(__dirname) 推（不用 process.cwd()）；
+//    · 仓库【外】的路径（游戏实例）⇒ 从环境变量读；缺了就【响亮抛错并退出】。
+// ═══════════════════════════════════════════════════════════════════════════════
+var REPO = path.join(__dirname, '..', '..')          // kubejs\_generators → 仓库根
+function envPath(name, what, example) {
+    var v = process.env[name]
+    if (v === undefined || String(v).trim() === '') {
+        throw new Error('🔴 缺少环境变量 ' + name + '（' + what + '）\n'
+            + '   ⇒ 请先设置它，例如（PowerShell）：$env:' + name + " = '" + example + "'\n"
+            + '   ⇒ 本脚本【拒绝】在缺少它的前提下继续运行：那会拿错路径、静默产出错产物。')
+    }
+    return String(v).trim()
+}
+var BASE = path.join(REPO, 'recipe-convert') + path.sep
+var V = envPath('SH_INSTANCE', '游戏实例的【根目录】（其下有 mods\\ 与 local\\kubejs\\export\\）',
+    'D:\\Minecraft\\versions\\<你的实例目录名>') + path.sep
 var rows = JSON.parse(fs.readFileSync(BASE + 'rows.json', 'utf8'))
+// 🔴 2026-09-29 过期防线：本脚本读 rows.json ⇒ 必须先确认它对应的是当前 PF.txt。
+var PROV = require('./provenance.js')
+PROV.check(BASE + 'rows.json', 'check_ids.js(读 rows.json)')
 var items = JSON.parse(fs.readFileSync(V + 'local\\kubejs\\export\\registries\\item.json', 'utf8'))
 var fluids = JSON.parse(fs.readFileSync(V + 'local\\kubejs\\export\\registries\\fluid.json', 'utf8'))
 var shLang = JSON.parse(fs.readFileSync(BASE + 'lang\\shanhai_zh_cn.json', 'utf8'))
@@ -42,6 +63,18 @@ for (var k in shLang) {
 var L = []
 function log(s) { L.push(s) }
 log('# id 存在性核对（正面对照，只报"有证据"的）')
+log('')
+// 🔴 2026-09-29 过期防线：本文件原来【不声明自己对应哪一版 PF.txt】——
+//    它不在 parse_pf → gen_manifest → gen_kjs 这条流水线里 ⇒ 天然会滞后。
+//    现在把源头指纹写进文件头（机器可解析的标记行 + 人读的现算自检行）。
+var _srcNow = PROV.srcNow(PROV.PF_SRC)
+log(PROV.markLine(_srcNow))
+log('数据源：`' + PROV.PF_SRC + '`（SHA256 `' + _srcNow.srcSha256 + '`，' + _srcNow.srcBytes + ' B，mtime '
+    + _srcNow.srcMtime + '，由 `rows.json` 中转 ⇒ 与它同一版）')
+log('')
+log('✅ **过期自检**：本文件声明的源头 sha256 = `' + _srcNow.srcSha256 + '`；'
+    + '生成这一刻磁盘现值 = `' + PROV.srcNow(PROV.PF_SRC).srcSha256 + '` ⇒ '
+    + (_srcNow.srcSha256 === PROV.srcNow(PROV.PF_SRC).srcSha256 ? '一致。' : '**❌ 不一致！**'))
 log('')
 log('三个正面来源（按 namespace 分派）：')
 log('')
@@ -101,7 +134,7 @@ for (var z = 0; z < ids.length; z++) {
 }
 log('## 结论')
 log('')
-log('- 出现在 38 条样板里的 **id 总数 = ' + ids.length + '**')
+log('- 出现在本次 ' + rows.length + ' 条样板里的 **id 总数 = ' + ids.length + '**')
 log('- ✅ **在正面来源里找到 = ' + present.length + '**')
 log('- ❌ **在正面来源里找不到 = ' + absent.length + '**')
 log('')
@@ -124,5 +157,7 @@ log('|---|---|---|')
 for (var p = 0; p < present.length; p++) log('| `' + present[p].id + '` | ' + (present[p].kind === 'item' ? '物品' : '流体') + ' | ' + present[p].n + ' |')
 log('')
 fs.writeFileSync(BASE + 'id_check.md', L.join('\r\n'), 'utf8')
+var _icRec = PROV.record(BASE + 'id_check.md', 'kubejs\\_generators\\check_ids.js', PROV.PF_SRC)
+console.log('[PROV] id_check.md      自证: srcSha256=' + _icRec.srcSha256 + ' artifactSha256=' + _icRec.artifactSha256 + ' bytes=' + _icRec.artifactBytes)
 console.log('ids=' + ids.length + ' present=' + present.length + ' absent=' + absent.length)
 for (var q2 = 0; q2 < absent.length; q2++) console.log('  ABSENT: ' + absent[q2].kind + ' ' + absent[q2].id)

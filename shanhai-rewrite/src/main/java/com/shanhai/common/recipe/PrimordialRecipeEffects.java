@@ -1,10 +1,12 @@
 package com.shanhai.common.recipe;
 
 import com.gregtechceu.gtceu.api.capability.recipe.EURecipeCapability;
+import com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder;
 import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
+import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
 import com.gregtechceu.gtceu.api.recipe.chance.logic.ChanceLogic;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.content.ContentModifier;
@@ -15,14 +17,22 @@ import com.gtladd.gtladditions.utils.RecipeCalculationHelper;
 
 import com.mojang.logging.LogUtils;
 
+import com.shanhai.common.log.ShanhaiLogThrottle;
+import com.shanhai.common.thread.ShanhaiBatchPlan;
+import com.shanhai.common.thread.ShanhaiDurationFloor;
+import com.shanhai.common.thread.ShanhaiFairAllocation;
+import com.shanhai.common.thread.ShanhaiParallelBudget;
+
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongLongPair;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 
 import org.gtlcore.gtlcore.api.recipe.BatchProcessing;
+import org.gtlcore.gtlcore.api.recipe.IAdvancedContentModifier;
 import org.gtlcore.gtlcore.api.recipe.IGTRecipe;
 import org.gtlcore.gtlcore.api.recipe.IParallelLogic;
 import org.gtlcore.gtlcore.api.recipe.RecipeRunnerHelper;
+import org.gtlcore.gtlcore.config.ConfigHolder;
 import org.slf4j.Logger;
 
 import java.util.Collection;
@@ -216,6 +226,252 @@ public final class PrimordialRecipeEffects {
     public static final int MIN_LIMITED_DURATION = 10;
     /** GUI 允许的上限范围。 */
     public static final int MAX_LIMITED_DURATION = 200;
+
+    /**
+     * 🔴 <b>「并行进入 long 档之后的配方时长下限」= 10 tick</b>（用户 2026-09-30 拍板）。
+     *
+     * <p>用户原话（逐字）：<i>「对了，这个配方加到 long 之后可以加一个最小配方时长为 10tick，
+     * 然后 jade 写一下提示，这样不会引起误解」</i>
+     *
+     * <p>⚠️ <b>本常量只是别名，算术本体在纯核 {@link ShanhaiDurationFloor}（只 import {@code java.*}）</b>
+     * —— 与 {@link ShanhaiParallelBudget} 那一次同款理由：纯核能单独 javac 驱动做三段自证、
+     * 也能挂在加载期自检上在无头专服里真跑。全工程<b>只有那一份算术</b>，
+     * 判据 / 公式 / 与「时长永不变长」的调和全部写在那边的类注释里。
+     *
+     * <p>取值为什么是 10：与主机侧 GUI 允许的最小下限 {@link #MIN_LIMITED_DURATION} 同值
+     * （那个值本身照抄 gtladditions {@code LimitedDurationConfigurator} 的 {@code setMin(10)}），
+     * 加载期自检断言两者相等。
+     */
+    public static final int LONG_SCALE_MIN_DURATION = ShanhaiDurationFloor.LONG_SCALE_MIN_DURATION;
+
+    /**
+     * 本台机器当前的并行预算<b>是不是"进了 long 档"</b>（{@code > 2147483647}，严格大于）。
+     *
+     * <p>这就是「加到 long 之后」的可判定定义 —— 详见 {@link ShanhaiDurationFloor#isLongScaleParallel(long)}。
+     * <b>本方法只是别名</b>，算术与边界断言（含"天花板自身不触发"那条负面对照）都在纯核里。
+     */
+    public static boolean isLongScaleParallel(long parallelBudget) {
+        return ShanhaiDurationFloor.isLongScaleParallel(parallelBudget);
+    }
+
+    /**
+     * {@link #LONG_SCALE_MIN_DURATION} 的<b>实际生效值</b> = <b>绝对 10 tick</b> ⇒ 别名，
+     * 见 {@link ShanhaiDurationFloor#floorTargetFor(int)}。
+     *
+     * <p>⛔ 历史（作废，要点留档）：本方法曾经返回 {@code min(10, 配方原时长)}，
+     * 为的是不撞「任何情况下时长都不许超过定义时长」那条旧红线。用户 2026-09-30 拍板
+     * <b>「B. 破一次红线，让那 25 台也抬到 10」</b> ⇒ 现在<b>与原时长无关，恒为 10</b>。
+     * 新红线措辞逐字见 {@link ShanhaiDurationFloor} 的类注释。
+     */
+    public static int longScaleMinDurationFor(int originalDuration) {
+        return ShanhaiDurationFloor.floorTargetFor(originalDuration);
+    }
+
+    /**
+     * <b>「并行进 long 档 ⇒ 配方时长下限 10 tick」在配方对象上的唯一落点</b>。
+     *
+     * <pre>
+     *   并行预算 &lt;= 2147483647（未进 long 档）  ⇒  逐值不变（返回入参实例，零分配）
+     *   并行预算 &gt;  2147483647（已进 long 档）  ⇒  duration = max(duration, 10)   ← 绝对下限
+     * </pre>
+     *
+     * <p>🔴 <b>2026-09-30 同日第四轮（用户拍板 B）</b>：公式里的 {@code min(10, 原时长)} 已换成
+     * <b>绝对 10</b> ⇒ 原时长 1 tick 的配方（引擎链 25 台的实际情形）**也会**被抬到 10。
+     * 代价 = 那些配方比原版慢（最坏 1→10，即 10 倍），用户明知并接受。
+     * 新红线措辞逐字见 {@link ShanhaiDurationFloor} 的类注释；<b>只抬不砍</b>（幂等那一支仍在）。
+     *
+     * <p>算术本体在 {@link ShanhaiDurationFloor#apply(int, int, long)}；本方法只负责
+     * 「要不要改 → 不改就原样返回入参 → 要改才 {@link #guardedCopy} 拿副本再写 duration」，
+     * 与链上其它步骤（N3/N5/N6）同纪律。
+     *
+     * <p>⚠️ <b>恒等那一支是硬保证</b>：本工程所有"并行 ≤ 21 亿"的档位走这一支 ⇒ 一个字都不变
+     * （含「永恒物质模块 + 线程 1」那个恰好等于天花板的边界）。
+     *
+     * @param originalDuration 配方定义的原时长（<b>只用于日志与探针</b>；现行公式不读它）
+     * @param parallelBudget   并行预算（{@code totalParallelLimitFor(...)} 的输出）
+     */
+    /**
+     * 「并行 long 档时长下限」那一行（生效行）的闸门。
+     *
+     * <p>🔴 2026-10-01（用户点单「日志的问题」）：实测日志里这一行打了 <b>1270 次</b>，
+     * 而 1270 次的取值<b>完全相同</b>（预算 = Long.MAX、1 → 10、下限 10、原时长 1）。
+     * ⇒ 改成「<b>形态第一次出现时打一次</b>」：稳态一行都不落盘，换档 / 退出仍然看得见。
+     * 判定本体在 {@link ShanhaiLogThrottle#decideDurationFloor}（纯 JDK；离线可单跑自检）。
+     */
+    private static final ShanhaiLogThrottle.Gate shanhai$FLOOR_GATE = new ShanhaiLogThrottle.Gate();
+
+    public static GTRecipe applyLongScaleDurationFloor(GTRecipe recipe, int originalDuration, long parallelBudget) {
+        if (recipe == null) {
+            return recipe;
+        }
+        if (!ShanhaiDurationFloor.isLongScaleParallel(parallelBudget)) {
+            // ── 恒等支（本工程所有 ≤ 21 亿 的档位都走它：一个数都不改、一个 .copy() 都不做）──
+            // 🔴 2026-10-01：本支**默认一行都不打**。只有「本闸门打过 long 档形态」**且**
+            //    「long 档调用已静默 ≥ 30 秒」时才兑现一行「已退出 long 档」。
+            //    为什么必须靠静默超时：本方法是**无机器身份的静态工具**，而 25 台模块里大量档位
+            //    的预算 ≤ 21 亿（例：空槽 64）⇒「看到一次非 long 调用」根本不等于「刚那台退出了」
+            //    （照字面实现会打出一堆**假退出**）。判据与理由见
+            //    {@link ShanhaiLogThrottle#decideDurationFloorExit}。
+            final ShanhaiLogThrottle.Verdict exit = ShanhaiLogThrottle.decideDurationFloorExit(
+                    shanhai$FLOOR_GATE, parallelBudget,
+                    ShanhaiLogThrottle.DEFAULT_LONG_EXIT_QUIET_MILLIS, System.currentTimeMillis());
+            if (exit.level != ShanhaiLogThrottle.Level.NONE) {
+                LOGGER.info("[SHANHAI-DURATION-FLOOR] 并行已退出 long 档：long 档调用已静默 ≥{} 秒"
+                                + "（当前预算 {}）⇒ 时长下限不再适用，配方时长回到原值。"
+                                + "自上次落盘以来同形重复 {} 次已静默。",
+                        ShanhaiLogThrottle.DEFAULT_LONG_EXIT_QUIET_MILLIS / 1000L, parallelBudget, exit.suppressed);
+            }
+            return recipe;
+        }
+        // 🔴 静默心跳：记「long 档调用还在继续」。缺了它，「退出」那一行会立刻误判成「已静默 30 秒」。
+        shanhai$FLOOR_GATE.touch(System.currentTimeMillis());
+        final int target = ShanhaiDurationFloor.apply(recipe.duration, originalDuration, parallelBudget);
+        if (target == recipe.duration) {
+            return recipe;
+        }
+        final GTRecipe copy = guardedCopy(recipe, "N6-模块-long下限");
+        copy.duration = target;
+        // 🔴 2026-10-01：原来这里**每次**都打（实测 1270 行、全部同形）⇒ 改成「形态第一次出现时打一次」。
+        final ShanhaiLogThrottle.Verdict floor = ShanhaiLogThrottle.decideDurationFloor(
+                shanhai$FLOOR_GATE, parallelBudget, recipe.duration, target, LONG_SCALE_MIN_DURATION,
+                originalDuration, System.currentTimeMillis());
+        if (floor.level != ShanhaiLogThrottle.Level.NONE) {
+            LOGGER.info("[SHANHAI-DURATION-FLOOR] 并行已进 long 档（预算 {}），配方时长 {} → {} tick"
+                            + "（下限 {}，原时长 {}）；未进 long 档的档位本行恒不触发。"
+                            + "【本行已改为「同一形态只打一次」：自上次落盘以来同形重复 {} 次已静默】",
+                    parallelBudget, recipe.duration, target, LONG_SCALE_MIN_DURATION, originalDuration,
+                    floor.suppressed);
+        }
+        return copy;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    //  2026-09-30（同日第五轮）：**配方对象级别**的加载期判据
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * <b>真对象判据</b>：拿一个<b>真实的 {@code GTRecipe} 实例</b>喂进本类的生产落点
+     * {@link #applyLongScaleDurationFloor(GTRecipe, int, long)}，再从<b>产出的那个配方对象上读
+     * {@code duration}</b>。
+     *
+     * <h2>为什么必须有这一条（用户 2026-09-30 明确要求）</h2>
+     * <blockquote>「自证里至少一条是"读实际 duration"…… 别只断言"函数被调用了"」
+     * —— 上一轮就是"函数调了但没生效"（{@code min(10, 1) = 1} ⇒ 目标 == 现值 ⇒ 静默返回）。</blockquote>
+     * 纯核 {@code ShanhaiDurationFloor.selfTest()} 查的是<b>算出来的数</b>；本方法查的是
+     * <b>「这个数有没有真的落到配方对象的字段上」</b> —— 两件事，都会坏，且坏法不同
+     * （对象侧漏写 ⇒ 算术全对、游戏里没用）。所以这一条不是重复。
+     *
+     * <h2>它断言的五件事</h2>
+     * <ol>
+     *   <li>探针配方初值 {@code duration == 1}（引擎链 25 台的实际情形）；</li>
+     *   <li><b>判据成立 ⇒ 从产出对象上读到 {@code duration == 10}</b>（本轮的核心读数）；</li>
+     *   <li>产出是<b>新副本</b>（{@code floored != probe}），且<b>入参对象没被就地改写</b>；</li>
+     *   <li>判据不成立 ⇒ 返回的<b>就是入参实例本身</b>（{@code same == probe}）⇒ 恒等那一支零分配；</li>
+     *   <li><b>只抬不砍</b>：{@code duration = 60} 的配方读回来仍是 60。</li>
+     * </ol>
+     *
+     * <p>任一条不成立 ⇒ 抛 {@link IllegalStateException}（与其余加载期自检同纪律：宁可加载失败，
+     * 也不许「静默不生效」）。
+     *
+     * @return 给调用方写日志用的一整行
+     */
+    public static String selfTestDurationFloorOnRealRecipe() {
+        final com.gregtechceu.gtceu.api.recipe.GTRecipeType type = ShanhaiRecipeTypes.PRIMORDIAL_POWER_GENERATOR;
+        if (type == null) {
+            return "[SHANHAI-DURATION-FLOOR] 真对象判据【跳过】：配方类型 primordial_power_generator 此刻还没注册"
+                    + "（此时只有纯核判据，没有对象级读数）。";
+        }
+        // 探针配方：输入/产出/条件全空、data 空、duration = 1、非燃料 —— 只为拿一个真实的 GTRecipe 实例。
+        final GTRecipe probe = new GTRecipe(type,
+                java.util.Map.of(), java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
+                java.util.Map.of(), java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
+                java.util.List.of(), java.util.List.of(), new net.minecraft.nbt.CompoundTag(), 1, false);
+        if (probe.duration != 1) {
+            throw new IllegalStateException("[SHANHAI-DURATION-FLOOR] 真对象判据前置失败：探针配方初值应为 1，实为 "
+                    + probe.duration);
+        }
+        // ① 判据成立 ⇒ 读产出对象上的 duration
+        final GTRecipe floored = applyLongScaleDurationFloor(probe, 1, Long.MAX_VALUE);
+        if (floored.duration != LONG_SCALE_MIN_DURATION) {
+            throw new IllegalStateException("[SHANHAI-DURATION-FLOOR] 🔴 真对象判据失败：判据成立时，"
+                    + "产出配方对象上读到的 duration 应为 " + LONG_SCALE_MIN_DURATION + "，实为 " + floored.duration
+                    + "（这正是「函数被调用了但没生效」那一类病）");
+        }
+        if (floored == probe) {
+            throw new IllegalStateException("[SHANHAI-DURATION-FLOOR] 真对象判据失败：判据成立时应返回新副本，"
+                    + "实际返回了入参实例本身");
+        }
+        if (probe.duration != 1) {
+            throw new IllegalStateException("[SHANHAI-DURATION-FLOOR] 真对象判据失败：入参配方对象被就地改写了（duration="
+                    + probe.duration + "，应为 1）");
+        }
+        // ② 判据不成立 ⇒ 返回入参实例本身（恒等支零分配），且读回来逐值不变
+        final GTRecipe same = applyLongScaleDurationFloor(
+                probe, 1, com.shanhai.common.thread.ShanhaiParallelBudget.NATIVE_INT_CEILING);
+        if (same != probe || same.duration != 1) {
+            throw new IllegalStateException("[SHANHAI-DURATION-FLOOR] 真对象判据失败：预算 = 天花板自身时"
+                    + "应原样返回入参实例、duration 不变，实际 same==probe? " + (same == probe)
+                    + "，duration=" + same.duration);
+        }
+        // ③ 只抬不砍：长配方读回来仍是原值
+        final GTRecipe longOne = new GTRecipe(type,
+                java.util.Map.of(), java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
+                java.util.Map.of(), java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
+                java.util.List.of(), java.util.List.of(), new net.minecraft.nbt.CompoundTag(), 60, false);
+        final int longAfter = applyLongScaleDurationFloor(longOne, 60, Long.MAX_VALUE).duration;
+        if (longAfter != 60) {
+            throw new IllegalStateException("[SHANHAI-DURATION-FLOOR] 真对象判据失败：60 tick 的配方被砍到 "
+                    + longAfter + "（本步只抬不砍）");
+        }
+        return "[SHANHAI-DURATION-FLOOR] 真对象判据通过（读的是产出配方对象的 duration 字段，不是「函数被调用」）："
+                + "探针 duration 1 ⇒ 判据成立（预算 Long.MAX）⇒ 读回 " + floored.duration + " tick；"
+                + "判据不成立（预算 = 2,147,483,647）⇒ 原样返回入参实例、读回 " + same.duration + " tick；"
+                + "60 tick 的配方读回 " + longAfter + "（只抬不砍）；入参对象未被就地改写。";
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    //  2026-09-30（同日第三轮）：现场探针 —— 治「抬头说 10 tick、配方还是 1 tick」
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 已打点次数（只打前 {@value #shanhai$FLOOR_PROBE_LIMIT} 次，避免每 tick 刷屏）。
+     *
+     * <h2>为什么必须有这一条</h2>
+     * 用户 2026-09-30 报「它没有到 10 tick」。而 {@link #applyLongScaleDurationFloor} 只在
+     * <b>真的改写了</b>时才打 INFO ⇒ 没有这行日志时，有两种完全不同的病长得一模一样：
+     * <ol>
+     *   <li><b>判据没过</b>（{@code parallelBudget} 没进 long 档 ⇒ 用户看到的那行 Jade 提示是假的）；</li>
+     *   <li><b>目标值 == 现值</b>（{@code max(当前, 10) == 当前} ⇒ 当前已 ≥ 10，本来就不该改，不是 bug）。</li>
+     * </ol>
+     * 本方法把<b>这两个数连同它们的来源一起打出来</b>，一次运行即可分辨。
+     *
+     * @param isGenerator       只有发电那台走原生链；其余 25 台进不了本方法（调用方已过滤）
+     * @param parallelBudget    判据用的预算（与提示行、与并行那一步同一个数）
+     * @param durationAtEntry   链上第 ② 步之后读到的时长（= 进本链时的原时长；**诊断值**）
+     * @param floorBase         配方定义实例的原时长（**诊断值**；现行公式不读它，只用来比对"链上值有没有被污染"）
+     * @param durationNow       第 ③④ 步交出来的当前时长
+     */
+    public static void shanhai$probeDurationFloor(boolean isGenerator, long parallelBudget,
+                                                  int durationAtEntry, int floorBase, int durationNow) {
+        if (!isGenerator || shanhai$floorProbeCount >= shanhai$FLOOR_PROBE_LIMIT) {
+            return;
+        }
+        shanhai$floorProbeCount++;
+        LOGGER.info("[SHANHAI-DURATION-FLOOR] 原生链现场探针（{}/{} 次）：预算={}（判据 >{} ⇒ long 档={}）"
+                        + "／链上原时长={}／基准原时长={}／第 ③④ 步之后 duration={}／本步应改成={}"
+                        + "（若「应改成 == duration」⇒ 按设计不改写，也不会打印生效行）",
+                shanhai$floorProbeCount, shanhai$FLOOR_PROBE_LIMIT, parallelBudget,
+                com.shanhai.common.thread.ShanhaiParallelBudget.NATIVE_INT_CEILING,
+                ShanhaiDurationFloor.isLongScaleParallel(parallelBudget),
+                durationAtEntry, floorBase, durationNow,
+                ShanhaiDurationFloor.apply(durationNow, floorBase, parallelBudget));
+    }
+
+    /** 探针最多打几次。 */
+    private static final int shanhai$FLOOR_PROBE_LIMIT = 3;
+
+    /** 探针计数（静态；只为"打几次"服务，不参与任何判定）。 */
+    private static int shanhai$floorProbeCount = 0;
 
     /**
      * 减免公式的底数：{@code R = 0.95 ^ (17 / 等级)}（<b>R 是减免比例，不是成本系数</b>；
@@ -1060,6 +1316,539 @@ public final class PrimordialRecipeEffects {
         return multi;
     }
 
+    // ═══════════ 批处理（BatchProcessing）在【多配方引擎路径】上的唯一落点 ═══════════
+
+    /**
+     * 🔴 <b>批处理的时间窗份数 N —— 照抄 gtlcore {@code BatchProcessing.getBatchSize} 的第一段。</b>
+     *
+     * <pre>
+     *   [字节码] BatchProcessing.apply：
+     *       22: iconst_1 / 23: ConfigHolder.INSTANCE.batchProcessingTimeLimitTicks / 29: Math.max  → window
+     *       34–57: (duration &gt; 0 &amp;&amp; duration &lt;= window / 2) ⇒ Eligibility.TIME_WINDOW
+     *              （⇒ 时长 &gt; 时间窗一半的配方【根本不进批处理】）
+     *   [字节码] BatchProcessing.getBatchSize：
+     *       21: window  22: recipe.duration  26: idiv   ⇒ cycles = 时间窗 / 配方时长
+     *       …再被 limitByLongAmounts 与 getParallelAmountWithoutEU 按<b>输入量</b>收紧
+     *   ⇒ 本方法取 N = max(1, batchProcessingTimeLimitTicks / 原配方时长)
+     * </pre>
+     * ⚠️ <b>与上游的差异（如实写清，不藏）</b>：上游那个 {@code duration} 是<b>修饰链之后</b>的配方时长
+     * （模块侧 N5 会把时长乘 f），本方法用<b>配方定义原值</b>（{@code originRecipe.duration}）。
+     * 取原值的理由：这是玩家在侧栏看到的那个时长，也是"连跑几次"最直观的口径；
+     * 而且原值 ≥ 修饰后值 ⇒ 本方法的 N <b>偏小</b>（更保守），不会放大过头。
+     *
+     * @return {@code >= 1}；<b>机器没开批处理 / 不支持 / 时长非正 ⇒ 恒为 1</b>（= 逐字退化为改动前的行为）
+     */
+    public static int batchTimeWindowCycles(IRecipeLogicMachine machine, GTRecipe originRecipe) {
+        if (machine == null || originRecipe == null) {
+            return 1;
+        }
+        final MetaMachine self = machine.self();
+        if (self == null || !BatchProcessing.isEnabled(self)) {
+            // isEnabled = 该机器 implements IBatchMachine && supportsBatchProcessing() && isBatchEnabled()
+            // 主机侧三道覆写都返回 false ⇒ 主机恒走这一支（用户裁决「主机的批处理是要删去的」）。
+            return 1;
+        }
+        final int originDuration = originRecipe.duration;
+        if (originDuration <= 0) {
+            return 1;
+        }
+        final int window = Math.max(1, ConfigHolder.INSTANCE.batchProcessingTimeLimitTicks);
+        return Math.max(1, window / originDuration);
+    }
+
+    /**
+     * 🔴 <b>批处理（batch）= 连跑 N 次 —— 施加在"已经并好、已经扣过料"的引擎成品上。</b>
+     *
+     * <h2>两条语义的正面对照（用户 2026-09-27 规格原话）</h2>
+     * <pre>
+     *   用户原话：「批处理应该是不影响机器的耗电的，而且批处理应该是延长机器运行时间的」
+     *   并行（parallel）＝ 同时跑 N 份 ⇒ 输入 ×N、输出 ×N、<b>耗时不变</b>、<b>EU/t ×N</b>
+     *   批处理（batch）   ＝ 连跑 N 次   ⇒ 输入 ×N、输出 ×N、<b>耗时 ×N</b>、<b>EU/t 不变</b>   ← 本方法
+     * </pre>
+     * ⇒ 本方法只做<b>三件事</b>：补扣 {@code (N-1)×p} 份原料（③）、产出 ×N、耗时 ×N（④）。
+     * <b>{@code tickInputs}（= EU/t）与 {@code tickOutputs} 原样写回 ⇒ EU/t 一文不变</b>；
+     * 「总耗电量变成 N 倍」是<b>跑得久了</b>（duration ×N）自然的结果，不是把 EU/t 乘上去。
+     *
+     * <h2>为什么补扣原料必须由我们自己调 {@code handleRecipeInput}</h2>
+     * <pre>
+     *   [字节码] RecipeCalculationHelper.calculateParallelsWithGreedyAllocation（gtladditions 3.2.8）
+     *      130: invokevirtual RecipeCalculationHelper.multipleRecipe:(GTRecipe;J)GTRecipe   ← inputs/outputs 各 ×p
+     *      146: invokestatic  RecipeRunnerHelper.handleRecipeInput:(IRecipeLogicMachine;GTRecipe)Z
+     *           ⇒ ★材料在【装配期】就真扣了，且只扣这一处
+     *   [字节码] RecipeCalculationHelper.buildNormalRecipe：只 put outputs / tickInputs(EU) / duration
+     *           ⇒ 引擎成品的 {@code inputs} 恒为【空】，并被打上 setBatchProcessed(true)
+     *   [字节码] MutableRecipesLogic.onMultipleRecipeFinish：
+     *       26: invokestatic RecipeRunnerHelper.handleRecipeOutput   ← 收尾【只发产出，从不碰 inputs】
+     *   ⇒ 引擎路径【没有任何一处】会在运行期消费 {@code recipe.inputs}
+     *     ⇒ 输入 ×N 只能由本方法在装配期补扣（把 inputs 塞回成品配方是没用的：没人会扣它）。
+     * </pre>
+     *
+     * <h2>③ 的原子性（先模拟、后真扣）</h2>
+     * <pre>
+     *   [字节码] RecipeRunnerHelper.matchRecipeInput  → handleRecipe(…, isTick=false, isSimulate=<b>true</b>)  ← 模拟
+     *   [字节码] RecipeRunnerHelper.handleRecipeInput → handleRecipe(…, isTick=true,  isSimulate=<b>false</b>) ← 真扣
+     * </pre>
+     * 份数已由 ① 用引擎自己用的同一个 API（{@code IParallelLogic.getMaxParallel}）钳过，③ 再模拟一次
+     * ⇒ 预检不过就<b>整单放弃</b>（不扣料、不改配方、原样返回入参实例）。
+     *
+     * <h2>④ 逐句照抄 gtlcore {@code BatchProcessing.scaleRecipe}（唯一权威来源）</h2>
+     * <pre>
+     *   [字节码] BatchProcessing.scaleRecipe(GTRecipe, int)：
+     *        3: IAdvancedContentModifier.preciseMultiplier((long)N)
+     *        7: GTRecipe.copy(ContentModifier, false)                ← inputs/outputs/tickInputs/tickOutputs 四张表全 ×N
+     *       17: tickInputs.clear()  + 21: putAll(源.tickInputs)      ← ★EU/t 还原成原值（不变）
+     *       39: tickOutputs.clear() + 43: putAll(源.tickOutputs)     ← 同上
+     *       61: putfield duration = 源.duration * N                  ← ★耗时 ×N
+     * </pre>
+     * ⚠️ <b>刻意不调 gtlcore 的 {@code BatchProcessing.apply}</b>：它的第一闸是
+     * {@code isBatchProcessed()}，而引擎成品恒为 {@code true}（"引擎已按批装好"的信号）；
+     * 把标记洗成 false 再喂它 = 对一张 inputs 为空的配方乘 outputs ⇒ <b>白送</b>
+     * （正是 2026-09-27 用户实机报的「1 个铁锭出 100 个铁板」）。
+     * <h2>⑤ {@code realParallels} ← 源值 × N（独立掷骰 · 照抄 gtlcore）</h2>
+     * <pre>
+     *   [源码] org.gtlcore.gtlcore.api.recipe.BatchProcessing#scaleRecipe(GTRecipe recipe, int batchSize) 末行：
+     *          IGTRecipe.of(batched).setRealParallels(IGTRecipe.of(recipe).getRealParallels() * (long) batchSize);
+     * </pre>
+     * 概率副产必须<b>掷 N 次独立的骰子</b>，不能"只掷 1 次、把那一注结果放大 N 倍"——
+     * 后者的方差 ≈ N 倍（例：p=1、副产率 30%、N=10 ⇒ 要么 0 份、要么 10 份；
+     * 正确形态是期望 3 份、取值 0~10 的二项分布）。
+     * 用 {@link #saturatingMultiply} 而不是裸 {@code *}：本工程红线是并行/份数算术一律饱和、不许回绕成负数。
+     * <p>⚠️ <b>副作用（已核对字节码，不是猜测）</b>：gtlcore {@code GTRecipeMixin#setRealParallels} 的实现体是
+     * <pre>
+     *   this.realParallels = realParallel;
+     *   this.parallels     = Ints.saturatedCast(realParallel);   // ← 同一个 setter 顺带写 parallels
+     * </pre>
+     * ⇒ 上面那行 {@code scaled.parallels = finalRecipe.parallels;}（本方法 ④ 里）<b>会被这一句覆盖</b>成
+     * {@code saturatedCast(p × N)}。<b>这与 gtlcore 逐值一致</b>：gtlcore 的 {@code batched} 的 {@code parallels}
+     * 初值只来自 {@code GTRecipe.copy()}（= 1），{@code RecipeExtensionCopier} 只按 getter/setter 配对搬运、
+     * 而 {@code parallels} 是裸 public 字段（无 {@code getParallels}/{@code setParallels}）⇒ 搬不动，
+     * 所以 gtlcore 的 {@code batched.parallels} <b>也只由这一句 setRealParallels 写定</b>。
+     * 它同时是"掷骰次数真的变成 p×N"的机制（{@code com.gregtechceu.gtceu.api.recipe.RecipeRunner#fillContent}
+     * 的两处都是按 {@code this.recipe.parallels} 定掷骰次数与每注摊薄量）。
+     * <p>📝 <b>2026-09-27 订正</b>：本段原写作「⚠️ 刻意不写 {@code realParallels}」（称"保持批处理只动三件事"），
+     * 与紧邻下方的代码（确实写了 {@code setRealParallels} 与 {@code setSubTickParallelized}）<b>直接矛盾</b>；
+     * 现按代码订正为上面的表述。
+     *
+     * @param parallel 本轮并行份数 {@code p}（= 引擎贪心分配出来的份数，材料已按它扣过）
+     * @return 连跑 N 次之后的成品；<b>N ≤ 1 ／ 料不够 ／ 装不下 ／ 机器没开批处理 ⇒ 原样返回 {@code finalRecipe}</b>
+     */
+    public static GTRecipe applyBatchProcessing(IRecipeLogicMachine machine, GTRecipe originRecipe,
+                                                GTRecipe finalRecipe, long parallel) {
+        if (machine == null || originRecipe == null || finalRecipe == null || parallel <= 0L) {
+            return finalRecipe;
+        }
+        final MetaMachine self = machine.self();
+        if (self == null || !BatchProcessing.isEnabled(self)) {
+            // isEnabled = 该机器 implements IBatchMachine && supportsBatchProcessing() && isBatchEnabled()
+            // 主机侧三道覆写都返回 false ⇒ 主机恒走这一支（用户裁决「主机的批处理是要删去的」）。
+            return finalRecipe;
+        }
+        final int wanted = batchTimeWindowCycles(machine, originRecipe);
+        if (wanted <= 1) {
+            // 时长 > 时间窗一半的配方，上游也不会触发批处理 ⇒ 零分配、零改动。
+            return finalRecipe;
+        }
+
+        // ── ① 输入量上限（份数）：装配期已经按 p 扣过一份 ⇒「本轮总共能跑几份」= 剩余份数 + p ──
+        final long remaining;
+        try {
+            remaining = IParallelLogic.getMaxParallel(machine, originRecipe, Long.MAX_VALUE);
+        } catch (Throwable t) {
+            LOGGER.warn("[SHANHAI-BATCH] 输入量上限读取失败，放弃本次批处理（退化为未开批处理）：{}", t.toString());
+            return finalRecipe;
+        }
+        long cycles = remaining <= 0L ? 0L : saturatingAdd(remaining, parallel) / parallel;
+
+        // ── ② 输出空间上限（份数）：产出尚未发放，整块输出空间都可用 ──
+        try {
+            final long hintWanted = saturatingMultiply(parallel, wanted);
+            final int hint = hintWanted > (long) Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) hintWanted;
+            final int outputLimited = ParallelLogic.limitByOutputMerging(
+                    originRecipe, (IRecipeCapabilityHolder) machine, hint, machine::canVoidRecipeOutputs);
+            if (outputLimited >= 0) {
+                cycles = Math.min(cycles, (long) outputLimited / parallel);
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("[SHANHAI-BATCH] 输出空间钳制失败，放弃本次批处理（退化为未开批处理）：{}", t.toString());
+            return finalRecipe;
+        }
+
+        final long appliedLong = Math.min((long) wanted, cycles);
+        if (appliedLong <= 1L) {
+            shanhai$logBatchSkippedOnce(machine, originRecipe, parallel, wanted);
+            return finalRecipe;
+        }
+        final int applied = (int) appliedLong;
+
+        // ── ③ 真扣 (N-1)×p 份额外原料（先模拟、后真扣）──
+        final long extraMultiple = saturatingMultiply(parallel, (long) applied - 1L);
+        if (extraMultiple <= 0L || extraMultiple == Long.MAX_VALUE
+                || extraMultiple / parallel != (long) applied - 1L) {
+            LOGGER.warn("[SHANHAI-BATCH] 额外投料量溢出（p={} ×(N-1)={}），放弃本次批处理（退化为未开批处理）。",
+                    parallel, applied - 1);
+            return finalRecipe;
+        }
+        final GTRecipe extraRecipe;
+        try {
+            extraRecipe = RecipeCalculationHelper.INSTANCE.multipleRecipe(originRecipe, extraMultiple);
+        } catch (Throwable t) {
+            LOGGER.warn("[SHANHAI-BATCH] 构造额外投料配方失败，放弃本次批处理：{}", t.toString());
+            return finalRecipe;
+        }
+        if (!RecipeRunnerHelper.matchRecipeInput(machine, extraRecipe)) {
+            LOGGER.warn("[SHANHAI-BATCH] 额外投料【预检不过】（p={} ×(N-1)={}）⇒ 放弃本次批处理："
+                            + "不扣任何料、配方原样交回（退化为未开批处理）。",
+                    parallel, applied - 1);
+            return finalRecipe;
+        }
+        if (!RecipeRunnerHelper.handleRecipeInput(machine, extraRecipe)) {
+            LOGGER.error("[SHANHAI-BATCH] 🔴 额外投料【真扣失败】（预检已通过 ⇒ 理论上到不了这里；p={} ×(N-1)={}）"
+                            + "⇒ 配方原样交回，本行原文请交回验收。",
+                    parallel, applied - 1);
+            return finalRecipe;
+        }
+
+        // ── ④ 连跑 N 次：产出 ×N、耗时 ×N、EU/t 一文不变 ──
+        final GTRecipe scaled = finalRecipe.copy(
+                IAdvancedContentModifier.preciseMultiplier((long) applied), false);
+        scaled.parallels = finalRecipe.parallels;
+        scaled.ocTier = finalRecipe.ocTier;
+        scaled.tickInputs.clear();
+        scaled.tickInputs.putAll(finalRecipe.tickInputs);
+        scaled.tickOutputs.clear();
+        scaled.tickOutputs.putAll(finalRecipe.tickOutputs);
+        scaled.duration = saturatingDuration(finalRecipe.duration, applied);
+        final long euBefore = RecipeHelper.getInputEUt(finalRecipe);
+        final long euAfter = RecipeHelper.getInputEUt(scaled);
+        if (scaled instanceof IGTRecipe dst) {
+            if (finalRecipe instanceof IGTRecipe src) {
+                // 对齐 gtlcore BatchProcessing.scaleRecipe 的末行：realParallels ← 源值 × N（独立掷骰）。
+                dst.setRealParallels(saturatingMultiply(src.getRealParallels(), (long) applied));
+                if (src.isSubTickParallelized()) {
+                    dst.setSubTickParallelized(true);
+                }
+            }
+            dst.setBatchSize(applied);
+            // 我们已经【自己】按批装配完了 ⇒ 打上标记，杜绝 gtlcore 的 applyInPlace 再乘一次。
+            dst.setBatchProcessed(true);
+        }
+        shanhai$logBatchAppliedOnce(originRecipe, finalRecipe, scaled, parallel, wanted, applied, extraMultiple,
+                euBefore, euAfter);
+        return scaled;
+    }
+
+    // ═════════ 批处理在【多配方聚合】（跨配方并行 ≥ 2 条）上的正确形态（2026-09-30） ═════════
+
+    /**
+     * 🔴 <b>多配方聚合档的批处理 = 对【每一条】origin 各补各的 {@code (N-1)×p_i}，且全部预检通过才真扣。</b>
+     *
+     * <h2>它替换掉的是什么（上一轮 §3.4 的"安全选择"）</h2>
+     * 上一轮发现：{@link #applyBatchProcessing} 的额外投料只按<b>第一条</b> origin 与第一条的份数补
+     * （调用点传的是 {@code shanhai$originRecipeOf} / {@code shanhai$parallelOf}），
+     * 却把<b>聚合后的全部产出</b>乘 N ⇒ 少扣料 = <b>白送材料</b>（本工程红线）。
+     * 当时的处置是"多配方下干脆【不施加】批处理"（打一行 WARN）。
+     * <b>本方法就是那个"下一轮的正确形态"</b>：决策与原子性全在
+     * {@link ShanhaiBatchPlan}（纯算术核，可用 {@code javac} 离线驱动），
+     * 本方法只负责"采数"与"把结果装配成配方"。
+     *
+     * <h2>N 取哪个 —— 一句话</h2>
+     * {@code N = min( 时间窗 ÷ max(各条时长) , 逐条输入量上界 , 聚合体输出空间 )}；
+     * 时长取 <b>max</b> 的依据（同口径 / 保住上游时间窗不变式 / 保住上游资格闸门 / 每条各算 N_i 不可行）
+     * 逐条写在 {@link ShanhaiBatchPlan} 的类注释里，不在这里重复。
+     *
+     * <h2>🔴 为什么本方法把 {@link #applyBatchProcessing} 的 ④ 段【照抄】而不是抽公共函数</h2>
+     * 抽公共函数会让"单条候选"那条路径的执行体<b>跟着动</b>，而本工程对它的硬要求是
+     * <b>「候选 ≤ 1 条时逐值不变」</b>。照抄之后，单条路径的字节码<b>一个字节都不变</b>
+     * （判据：{@code javap -c -p} 新旧 jar 的 {@code applyBatchProcessing} 逐行相同），
+     * 于是那条要求从"我论证过"变成"机器比出来的"。代价是两处 20 行的重复 —— 已知并接受。
+     *
+     * @param machine    机器（批处理开关由它的 {@code IBatchMachine} 三道覆写决定）
+     * @param origins    {@code ParallelData#getOriginRecipeList()}（与 {@code parallels} 一一对应）
+     * @param parallels  {@code ParallelData#getParallels()}（材料已按它扣过一轮）
+     * @param finalRecipe 引擎装配 + N3/N5/N6 + 原生权威之后的成品（本方法只做"再连跑 N-1 次"）
+     * @return 施加成功 = 连跑 N 次之后的成品；<b>被拒 / 装不下 / 开关没开 ⇒ 原样返回 {@code finalRecipe}</b>
+     */
+    public static GTRecipe applyBatchProcessingMulti(IRecipeLogicMachine machine, List<GTRecipe> origins,
+                                                     long[] parallels, GTRecipe finalRecipe) {
+        if (machine == null || finalRecipe == null || origins == null || parallels == null) {
+            return finalRecipe;
+        }
+        final int originCount = origins.size();
+        if (originCount <= 0) {
+            return finalRecipe;
+        }
+        if (originCount == 1) {
+            // 防御性兜底：单条时【原路交回单条版】⇒「单条候选时逐值不变」在任何入口都成立。
+            return applyBatchProcessing(machine, origins.get(0), finalRecipe, Math.max(0L, parallels[0]));
+        }
+        if (parallels.length < originCount) {
+            // 份数数组短于候选条数 ⇒ 对应关系不可信 ⇒ 算不出该补多少（血规矩：宁可跳过，不许猜）。
+            LOGGER.warn("[SHANHAI-BATCH] 多配方档：候选 {} 条，而份数数组只有 {} 项（对应关系不可信）"
+                            + "⇒ 算不出该补多少 ⇒ 【本轮不施加批处理】（不扣任何料、配方原样交回）。",
+                    originCount, parallels.length);
+            return finalRecipe;
+        }
+        final MetaMachine self = machine.self();
+        if (self == null || !BatchProcessing.isEnabled(self)) {
+            // isEnabled = 该机器 implements IBatchMachine && supportsBatchProcessing() && isBatchEnabled()
+            return finalRecipe;
+        }
+        final long[] durations = new long[originCount];
+        for (int i = 0; i < originCount; i++) {
+            final GTRecipe origin = origins.get(i);
+            if (origin == null) {
+                LOGGER.warn("[SHANHAI-BATCH] 多配方档：第 {} 条 origin 为 null ⇒ 算不出该补多少"
+                                + " ⇒ 【本轮不施加批处理】（不扣任何料、配方原样交回）。", i);
+                return finalRecipe;
+            }
+            durations[i] = origin.duration;
+        }
+        final long[] ps = parallels.length == originCount
+                ? parallels : java.util.Arrays.copyOf(parallels, originCount);
+        final long window = Math.max(1, ConfigHolder.INSTANCE.batchProcessingTimeLimitTicks);
+        final ShanhaiBatchPlan.Outcome outcome = ShanhaiBatchPlan.run(window, durations, ps,
+                i -> shanhai$batchInputBoundOf(machine, origins.get(i)),
+                wanted -> shanhai$batchOutputBoundOf(machine, finalRecipe, wanted),
+                new ShanhaiBatchPlan.Steps() {
+
+                    @Override
+                    public Object build(int index, long extra) {
+                        return shanhai$batchBuildExtraInput(origins.get(index), extra);
+                    }
+
+                    @Override
+                    public boolean precheck(int index, Object payload) {
+                        return RecipeRunnerHelper.matchRecipeInput(machine, (GTRecipe) payload);
+                    }
+
+                    @Override
+                    public boolean deduct(int index, Object payload) {
+                        return RecipeRunnerHelper.handleRecipeInput(machine, (GTRecipe) payload);
+                    }
+                });
+        if (outcome.kind != ShanhaiBatchPlan.Kind.APPLIED) {
+            shanhai$logBatchMultiNotAppliedOnce(machine, originCount, ps, outcome);
+            return finalRecipe;
+        }
+
+        // ── ④ 连跑 N 次：产出 ×N、耗时 ×N、EU/t 一文不变 ──
+        //    ⚠️ 本段与 applyBatchProcessing 的 ④【逐字相同】，刻意不共用（见方法注释）。
+        final int applied = (int) outcome.cycles;
+        final GTRecipe scaled = finalRecipe.copy(
+                IAdvancedContentModifier.preciseMultiplier((long) applied), false);
+        scaled.parallels = finalRecipe.parallels;
+        scaled.ocTier = finalRecipe.ocTier;
+        scaled.tickInputs.clear();
+        scaled.tickInputs.putAll(finalRecipe.tickInputs);
+        scaled.tickOutputs.clear();
+        scaled.tickOutputs.putAll(finalRecipe.tickOutputs);
+        scaled.duration = saturatingDuration(finalRecipe.duration, applied);
+        final long euBefore = RecipeHelper.getInputEUt(finalRecipe);
+        final long euAfter = RecipeHelper.getInputEUt(scaled);
+        if (scaled instanceof IGTRecipe dst) {
+            if (finalRecipe instanceof IGTRecipe src) {
+                dst.setRealParallels(saturatingMultiply(src.getRealParallels(), (long) applied));
+                if (src.isSubTickParallelized()) {
+                    dst.setSubTickParallelized(true);
+                }
+            }
+            dst.setBatchSize(applied);
+            dst.setBatchProcessed(true);
+        }
+        shanhai$logBatchMultiAppliedOnce(originCount, ps, outcome, finalRecipe, scaled, euBefore, euAfter);
+        return scaled;
+    }
+
+    /** 第 {@code i} 条 origin【单独看】当前还能跑几份；{@code < 0} = 问不出来（⇒ 降级，不猜）。 */
+    private static long shanhai$batchInputBoundOf(IRecipeLogicMachine machine, GTRecipe origin) {
+        try {
+            return IParallelLogic.getMaxParallel(machine, origin, Long.MAX_VALUE);
+        } catch (Throwable t) {
+            LOGGER.warn("[SHANHAI-BATCH] 多配方档：输入量上限读取失败（origin={}）⇒ 问不出就【不猜】：{}",
+                    origin, t.toString());
+            return -1L;
+        }
+    }
+
+    /**
+     * 输出空间能装下几份【聚合体】（{@code wanted} = 我们最多想要几份）。
+     *
+     * <p>为什么拿 {@code finalRecipe}（聚合体）而不是某一条 origin 去问：
+     * 被 ×N 的就是这一整块聚合产出（它已经把全部 origin 的产出都含在里面），
+     * 所以"这块还能装下几份"就是 N，而且它天然把"两条 origin 争同一个输出口"算进去了。
+     * <p>{@code [字节码] ParallelLogic.getMaxRecipeMultiplier} 的用法证实返回值是<b>份数（乘数）</b>：
+     * {@code limitByOutputMerging(recipe, holder, limit, canVoid)} 之后是
+     * {@code recipe.copy(ContentModifier.multiplier(那个返回值))} ⇒ 与 {@code recipe.parallels} 无关。
+     *
+     * @return 份数；{@code < 0} = 问不出来（⇒ 降级，不猜）
+     */
+    private static long shanhai$batchOutputBoundOf(IRecipeLogicMachine machine, GTRecipe aggregate, int wanted) {
+        try {
+            return ParallelLogic.limitByOutputMerging(aggregate, (IRecipeCapabilityHolder) machine, wanted,
+                    machine::canVoidRecipeOutputs);
+        } catch (Throwable t) {
+            LOGGER.warn("[SHANHAI-BATCH] 多配方档：输出空间钳制失败（聚合体={}）⇒ 问不出就【不猜】：{}",
+                    aggregate, t.toString());
+            return -1L;
+        }
+    }
+
+    /** 造第 {@code i} 条的额外投料配方；失败返回 {@code null}（⇒ 核心会整单放弃）。 */
+    private static Object shanhai$batchBuildExtraInput(GTRecipe origin, long extra) {
+        try {
+            return RecipeCalculationHelper.INSTANCE.multipleRecipe(origin, extra);
+        } catch (Throwable t) {
+            LOGGER.warn("[SHANHAI-BATCH] 多配方档：构造额外投料配方失败（origin={}，extra={}）：{}",
+                    origin, extra, t.toString());
+            return null;
+        }
+    }
+
+    /** 「多配方批处理已施加」的证据行一次性闸门（每个不同的 (N, p 数组) 组合只打一行，不刷屏）。 */
+    private static final java.util.Set<String> shanhai$batchMultiAppliedLogged =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** 「多配方批处理未施加」的证据行一次性闸门。 */
+    private static final java.util.Set<String> shanhai$batchMultiNotAppliedLogged =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * <b>「多配方档批处理真的施加了」的可 grep 证据行（一次性）。</b>
+     *
+     * <p>一行里同时给出用户抬头能对照的四件事：<b>N / 逐条 p 与额外料 / 产出倍率 / duration 前后 / EU/t 前后</b>，
+     * 以及 N 的三条上界各是多少 —— 这样"N 为什么是 100 而不是 50"在日志里是<b>读出来的</b>，不是猜的。
+     */
+    private static void shanhai$logBatchMultiAppliedOnce(int originCount, long[] parallels,
+                                                         ShanhaiBatchPlan.Outcome outcome,
+                                                         GTRecipe before, GTRecipe after,
+                                                         long euBefore, long euAfter) {
+        final String key = outcome.cycles + "/" + java.util.Arrays.toString(parallels);
+        if (shanhai$batchMultiAppliedLogged.size() > 256 || !shanhai$batchMultiAppliedLogged.add(key)) {
+            return;
+        }
+        LOGGER.info("[SHANHAI-BATCH] 🔴 多配方档批处理【已施加】：候选 {} 条同时在跑。"
+                        + "聚合时长基数 d0* = {} tick（= 各条时长取【最大】，理由见 ShanhaiBatchPlan 类注释）。"
+                        + "N = min(时间窗 {}÷d0* = {}, 输入量 {}, 输出空间 {}) = {}。"
+                        + "⇒ 逐条补扣 (N-1)×p_i：p = {} ⇒ 额外料 = {}（{}{} 条）"
+                        + "【每一条各补各的，且全部预检通过之后才真扣】。"
+                        + "产出：{} 张 → {} 张（×N）；duration：{} → {}（×N）；"
+                        + "★EUt：{} → {}（必须相等 ⇒ 「批处理不影响机器的耗电」）。",
+                originCount, outcome.d0Max,
+                Math.max(1, ConfigHolder.INSTANCE.batchProcessingTimeLimitTicks), outcome.nTime,
+                outcome.nInput, outcome.nOutput, outcome.cycles,
+                java.util.Arrays.toString(parallels), outcome.extrasText(),
+                outcome.zeroParallelCount == 0 ? "全部" : ("除 " + outcome.zeroParallelCount + " 条份额≤0 的之外，共 "),
+                outcome.extras.length - outcome.zeroParallelCount,
+                before.outputs.size(), after.outputs.size(), before.duration, after.duration,
+                euBefore, euAfter);
+    }
+
+    /**
+     * <b>「多配方档批处理本轮没施加」的可 grep 证据行（一次性）。</b>
+     *
+     * <p>三种归宿各有措辞，且与"漏做"必须能分开：
+     * <ul>
+     *   <li>{@code SKIPPED} ⇒ 正常跳过（N ≤ 1，多半是配方时长超过时间窗一半）—— <b>不是错</b>；</li>
+     *   <li>{@code REJECTED} ⇒ <b>算不出来</b>或<b>某条预检不过</b> ⇒ 降级，<b>不扣任何料</b>；</li>
+     *   <li>{@code DEDUCT_FAILED} ⇒ 预检全过却真扣失败（理论上到不了）⇒ 打 ERROR。</li>
+     * </ul>
+     */
+    private static void shanhai$logBatchMultiNotAppliedOnce(IRecipeLogicMachine machine, int originCount,
+                                                            long[] parallels,
+                                                            ShanhaiBatchPlan.Outcome outcome) {
+        final String key = outcome.kind + "/" + outcome.cycles + "/" + java.util.Arrays.toString(parallels);
+        if (shanhai$batchMultiNotAppliedLogged.size() > 256 || !shanhai$batchMultiNotAppliedLogged.add(key)) {
+            return;
+        }
+        final String head = "候选 " + originCount + " 条 / p = " + java.util.Arrays.toString(parallels)
+                + " / 聚合时长基数 d0* = " + outcome.d0Max + " tick / N 的三条上界 = (时间窗 "
+                + outcome.nTime + ", 输入量 " + outcome.nInput + ", 输出空间 " + outcome.nOutput + ")";
+        if (outcome.kind == ShanhaiBatchPlan.Kind.DEDUCT_FAILED) {
+            LOGGER.error("[SHANHAI-BATCH] 🔴 多配方档批处理【真扣失败】（预检已全部通过 ⇒ 理论上到不了这里）：{}"
+                            + " ⇒ 配方原样交回（退化为未开批处理），本行原文请交回验收。",
+                    head + "；" + outcome.reason);
+            return;
+        }
+        LOGGER.warn("[SHANHAI-BATCH] 多配方档批处理【本轮不施加】：{} ⇒ {}。"
+                        + "⚠️ 这是【降级】不是漏做：一粒额外料都没有扣，配方原样交回（从「省事」退回到「少功能」）。"
+                        + "机器={}",
+                outcome.kind == ShanhaiBatchPlan.Kind.SKIPPED ? "正常跳过" : "算不出 / 预检不过",
+                head + "；原因：" + outcome.reason,
+                machine == null ? null : machine.self());
+    }
+
+    /** 「批处理已施加」的证据行的一次性闸门（每个不同的 (N, p) 组合只打一行，不刷屏）。 */
+    private static final java.util.Set<String> shanhai$batchAppliedLogged =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** 「批处理被跳过」的证据行的一次性闸门。 */
+    private static final java.util.Set<String> shanhai$batchSkippedLogged =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * <b>「批处理真的按『连跑 N 次』施加了」的可 grep 证据行（一次性 · 正负对照自证）</b>。
+     *
+     * <p>一行里同时给出四个数：<b>产出倍率 / duration 前后 / EU/t 前后 / 额外扣料量</b> ——
+     * 判据 ②（耗时 ×N）与判据 ③（EU/t 不变）就是靠这一行在<b>运行期</b>读出来的，
+     * 不必等实机；{@code EUt 前 == EUt 后} 是"不影响耗电"的<b>现场读数</b>，不是承诺。
+     */
+    private static void shanhai$logBatchAppliedOnce(GTRecipe originRecipe, GTRecipe before, GTRecipe after,
+                                                    long parallel, int wanted, int applied, long extra,
+                                                    long euBefore, long euAfter) {
+        final String key = applied + "/" + parallel;
+        if (shanhai$batchAppliedLogged.size() > 256 || !shanhai$batchAppliedLogged.add(key)) {
+            return;
+        }
+        LOGGER.info("[SHANHAI-BATCH] 批处理已施加（「连跑 N 次」语义 · 一次性）："
+                        + "时间窗={} tick ／ 原配方时长={} tick ⇒ 时间窗份数={}；并行 p={}；实际连跑 N={}"
+                        + "（已被输入量/输出空间钳过）⇒ 额外补扣原料 = (N-1)×p = {} 份。"
+                        + "产出：{} 张 → {} 张（×N）；duration：{} → {}（×N）；"
+                        + "★EUt：{} → {}（必须相等 ⇒ 这就是「批处理不影响机器的耗电」）。",
+                Math.max(1, ConfigHolder.INSTANCE.batchProcessingTimeLimitTicks), originRecipe.duration,
+                wanted, parallel, applied, extra,
+                before.outputs.size(), after.outputs.size(), before.duration, after.duration,
+                euBefore, euAfter);
+    }
+
+    /**
+     * <b>「批处理被跳过」的可 grep 证据行</b> —— 与"漏做"必须能分开：
+     * 本行说明<b>不是没实现</b>，而是这一轮的输入/输出空间装不下第二份。
+     */
+    private static void shanhai$logBatchSkippedOnce(IRecipeLogicMachine machine, GTRecipe originRecipe,
+                                                    long parallel, int wanted) {
+        final String key = wanted + "/" + parallel;
+        if (shanhai$batchSkippedLogged.size() > 256 || !shanhai$batchSkippedLogged.add(key)) {
+            return;
+        }
+        LOGGER.info("[SHANHAI-BATCH] 批处理【本轮跳过】：时间窗份数={}，而 p={} 这一份之后"
+                        + "输入量或输出空间已装不下第二份 ⇒ 退化为未开批处理（不扣额外料、不改耗时）。"
+                        + "这不是「没实现」，是「料不够」。（时间窗={} tick ／ 原配方时长={} tick ／ 机器={}）",
+                wanted, parallel, Math.max(1, ConfigHolder.INSTANCE.batchProcessingTimeLimitTicks),
+                originRecipe.duration, machine == null ? null : machine.self());
+    }
+
+    /** 饱和加（本工程红线：并行/份数算术一律饱和，不许回绕成负数）。 */
+    private static long saturatingAdd(long a, long b) {
+        if (a < 0L || b < 0L) {
+            return Long.MAX_VALUE;
+        }
+        return a > Long.MAX_VALUE - b ? Long.MAX_VALUE : a + b;
+    }
+
+    /** 饱和乘（同上）。 */
+    private static long saturatingMultiply(long a, long b) {
+        if (a <= 0L || b <= 0L) {
+            return 0L;
+        }
+        return a > Long.MAX_VALUE / b ? Long.MAX_VALUE : a * b;
+    }
+
+    /** 时长 ×N 的饱和形态（不许回绕成负数）。 */
+    private static int saturatingDuration(int duration, int cycles) {
+        final long product = saturatingMultiply(duration, cycles);
+        return product > (long) Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) product;
+    }
+
     /**
      * 🔴 <b>long 通道的贪心并行分配（引擎并行预算 &gt; 2^31−1 时使用）。</b>
      *
@@ -1145,7 +1934,131 @@ public final class PrimordialRecipeEffects {
     }
 
     /**
-     * {@link #greedyAllocateWithLongLimit} 的回呼。
+     * 🔴 <b>跨配方并行的「公平分配」——上游 {@code calculateParallelsWithFairAllocation}
+     * （+ {@code getFinalParallelData} / {@code getParallelDataIndexArray}）的 long 版，逐句照搬。</b>
+     *
+     * <h2>它治的病（用户 2026-09-29 实机原文）</h2>
+     * <blockquote>
+     *   「我放入了两种配方的原材料，并且这两种的配方都可以正常执行，但是我开启跨配方种类并行时，
+     *    它们并没有同时进行，而是一种挤占了另一种，而 gtladd 的机器就可以同时执行」
+     * </blockquote>
+     * 父类 {@code MutableRecipesLogic.calculateParallels()} 走的是<b>贪心</b>
+     * （{@code calculateParallelsWithGreedyAllocation}），它的循环体第一条判据是
+     * <pre>
+     *   [字节码原文] RecipeCalculationHelper.calculateParallelsWithGreedyAllocation
+     *      82: lload 6 / 84: lconst_0 / 86: ifle 191      ← remain &lt;= 0 就 break（191 = 整个循环出口）
+     * </pre>
+     * 而每条的份数是 {@code p = IParallelLogic.getMaxParallel(holder, recipe, remain)}，
+     * 它的实现是「以传入的上限为起点，用实际输入量逐项做 {@code Math.min}」
+     * <pre>
+     *   [字节码原文] IParallelLogic.getMaxParallel(holder, recipe, limit)
+     *      46: lload_2 / 49: getInputItemParallel(holder, recipe, lload_2) / 53: Math.min(JJ)J / 56: lstore_2
+     * </pre>
+     * ⇒ 只要<b>第一条候选</b>的原料管够（创造输入总线里 2.14G 那种），它就把
+     * {@code remain} 一次吃光 ⇒ {@code remain == 0} ⇒ 循环在第二条<b>之前</b>结束
+     * ⇒ <b>整台机器只跑一条配方</b>。这就是玩家说的「一种挤占了另一种」。
+     *
+     * <h2>上游自己的解法（本方法照搬的那一份）</h2>
+     * gtladd 自己的多配方机器（{@code GTLAddMultipleRecipesLogic} 及其全部子类，
+     * 含「伪神之锻炉」那一支）用的<b>不是</b>贪心，而是公平分配，分两相：
+     * <pre>
+     *   相 1（每条候选先拿一份保底）
+     *     share_i = min(需求_i, 总预算 / 候选条数)         ← 上游原文 ldiv + Math.min
+     *     预算 -= share_i;  余下的需求进 remainingWants
+     *   相 2（水填充：余量按轮转补给还在要的人）
+     *     while (预算 &gt; 0 &amp;&amp; 还有人在要) {
+     *         每人份 = 预算 / 还在要的人数
+     *         for (还在要的人) { 补 min(还要多少, 每人份); 记消耗 }
+     *         预算 -= 本轮的消耗
+     *     }
+     * </pre>
+     * ⇒ <b>没有任何一条候选会被别人饿死</b>；而 {@code 候选条数 == 1} 时
+     * {@code share = min(需求, 总预算)} 与贪心<b>逐值相等</b>
+     * ⇒ 这就是「线程槽空 ⇒ 行为与今天完全一致」那条硬要求能被满足的原因。
+     *
+     * <h2>🔴 与上游 fair 版的<b>唯一</b>刻意差异：扣料仍留在分配相（shouldProcess = false）</h2>
+     * 上游 fair 版<b>不扣料</b>，返回的 {@code ParallelData.shouldProcess = true}，
+     * 扣料被推迟到 {@code buildFinalNormalRecipe} 里逐条做。
+     * 本工程<b>不跟着改这一点</b>，理由是「值不变」优先：
+     * <ol>
+     *   <li>本工程模块的 {@code ParallelData} 形态今天恒为
+     *       {@code (origins, parallels, false, processedRecipeList)}
+     *       ⇒ 整条 {@code buildFinalNormalRecipe} 契约<b>一个字都不用动</b>，
+     *       不存在「扣两次」或「都不扣」的风险面；</li>
+     *   <li>扣料与分配<b>交织</b>时，共享原料的稀缺性会被后续候选看见
+     *       （例：两配方共吃同一个编程电路，只有一个可用 ⇒ 第二条当场拿不到份数而退出，
+     *       而不是「先都算上、到装配期再失败」把预算浪费掉）。</li>
+     * </ol>
+     * ⚠️ 代价（<b>必须让验收方知情</b>）：某条候选在这一步扣料失败时，它那份额度
+     * <b>不会</b>被重新分给别人（上游 fair 版会，因为它的扣料在更晚处）。
+     * 表现 = 「候选 N 条、实际成料 M &lt; N 条」时总并行量小于预算。
+     * 调用方会把这两个数打进证据行，让这件事<b>看得见</b>，而不是静默少算。
+     *
+     * <h2>溢出</h2>
+     * 全程只有 {@code Math.min} / 饱和减 / 饱和加：{@code share_i <= 预算}
+     * 且 {@code Σ share_i <= 预算}（相 2 每轮扣掉的都是自己加出去的）
+     * ⇒ 上界恒为入参 {@code totalParallel}，<b>不可能回绕</b>。
+     *
+     * @param totalParallel 并行预算（调用方已用饱和乘法算好；本方法不再钳制）
+     * @param getter        与上游同形的回呼；相 1 传的是<b>总预算</b>（上游
+     *                      {@code GTLAddMultipleRecipesLogic} 的 {@code lload_2}，不是剩余量）
+     * @return 与上游同形：没有可跑配方时 {@code null}
+     */
+    public static ParallelData fairAllocateWithLongLimit(Collection<GTRecipe> recipes, long totalParallel,
+                                                         IRecipeLogicMachine machine, ParallelGetter getter) {
+        if (recipes == null || recipes.isEmpty() || machine == null || getter == null) {
+            return null;
+        }
+        // ── 相 0：先把每条候选的"需求"问出来（**不扣料**，纯读）──
+        //     ⚠️ 上限传的是【总预算】而不是剩余量 —— 与上游 GTLAddMultipleRecipesLogic 的
+        //       {@code getMaxParallel(recipe, lload_2)}（lload_2 = 总预算）逐字一致。
+        final int count = recipes.size();
+        final long[] demands = new long[count];
+        final GTRecipe[] ordered = new GTRecipe[count];
+        int i = 0;
+        for (GTRecipe match : recipes) {
+            final LongLongPair pair = getter.parallelOf(match, totalParallel);
+            demands[i] = pair == null ? 0L : pair.firstLong();
+            ordered[i] = match;
+            i++;
+        }
+
+        // ── 相 1 + 相 2：公平分配（纯算术，**实现在 {@link ShanhaiFairAllocation}** —— 那边零依赖、
+        //    可用 javac 单独编译并用离线判据驱动；本方法只负责"问需求 / 扣料"这两件必须碰机器的事）──
+        final long[] shares = ShanhaiFairAllocation.fairShares(demands, totalParallel);
+
+        // ── 扣料相：与 {@link #greedyAllocateWithLongLimit} 逐句同形 ──
+        final ObjectArrayList<GTRecipe> recipeList = new ObjectArrayList<>();
+        final ObjectArrayList<GTRecipe> processedRecipeList = new ObjectArrayList<>();
+        final LongArrayList parallelsList = new LongArrayList();
+        for (int k = 0; k < count; k++) {
+            final long p = shares[k];
+            if (p <= 0L) {
+                continue;
+            }
+            final GTRecipe match = ordered[k];
+            final GTRecipe paralleledRecipe = IParallelLogic.getRecipeOutputChance(
+                    machine, RecipeCalculationHelper.INSTANCE.multipleRecipe(match, p));
+            if (!RecipeRunnerHelper.handleRecipeInput(machine, paralleledRecipe)) {
+                continue;
+            }
+            recipeList.add(match);
+            processedRecipeList.add(paralleledRecipe);
+            parallelsList.add(p);
+        }
+        if (recipeList.isEmpty()) {
+            return null;
+        }
+        return new ParallelData(recipeList, parallelsList.toLongArray(), false, processedRecipeList);
+    }
+
+    // ⚠️ 公平分配的【纯算术核】（相 1 保底 + 相 2 水填充）刻意【不在本类里】——
+    //    它搬到了 {@link ShanhaiFairAllocation#fairShares(long[], long)}：那个类只 import java.*，
+    //    可以单独 javac 编译、用离线判据驱动（判据：temp/probes/fair-alloc/FairAllocCheck.java）。
+    //    本类只留"问每条候选的需求"与"扣料"这两件必须碰机器的事。
+
+    /**
+     * {@link #greedyAllocateWithLongLimit} / {@link #fairAllocateWithLongLimit} 的回呼。
      *
      * <p>形状 = 上游 {@code MutableRecipesLogic.calculateParallels$lambda$3}
      * （{@code (recipe, remaining) -> this.calculateParallel(machine, recipe, remaining)}）
@@ -1179,6 +2092,17 @@ public final class PrimordialRecipeEffects {
      * <p>只在<b>发电模块</b>（{@code definition.isGenerator()}）上触发；打：调用前/后的 EU 内容、本次并行 p、
      * 以及是否撞顶 ⇒ 修完前后一对比就知道数字有没有变、还卡不卡。
      */
+    /**
+     * 撞顶探针那一行的闸门。
+     *
+     * <p>🔴 2026-10-01（用户点单「日志的问题」）：实测日志里这一行打了 <b>1268 次</b>，
+     * 取值<b>完全相同</b>（{@code p=9223372036854775 乘前=2147483648 乘后=Long.MAX 撞顶=true}）。
+     * 而且「long 档下撞顶」是<b>用户自己拍过板的预期内行为</b>
+     * （「破一次红线让 25 台抬到 10」）⇒ 它不该每 tick 报。
+     * ⇒ 改成「<b>同一形态只打一次</b>」；只有「<b>没进 long 档却撞了墙</b>」才是异常，当场 WARN。
+     */
+    private static final ShanhaiLogThrottle.Gate shanhai$GEN_WALL_GATE = new ShanhaiLogThrottle.Gate();
+
     private static void shanhai$probeGeneratorEnergyWall(MetaMachine machine, GTRecipe before, GTRecipe after,
                                                          long parallel) {
         try {
@@ -1190,10 +2114,26 @@ public final class PrimordialRecipeEffects {
             }
             final long beforeEu = shanhai$firstTickOutputEu(before);
             final long afterEu = shanhai$firstTickOutputEu(after);
-            LOGGER.info("[SHANHAI-GEN-LIMIT] p={} 乘前 tickOutputs.eu={} ⇒ 乘后={}；撞 Long.MAX_VALUE 顶={}"
-                            + "（墙 = EURecipeCapability.copyWithModifier 的 Double.longValue() 窄化；"
-                            + "上游走 BigDecimal/BigInteger 分支绕开它）",
-                    parallel, beforeEu, afterEu, afterEu == Long.MAX_VALUE);
+            // 🔴 2026-10-01：判定本体在 ShanhaiLogThrottle（纯 JDK；离线可单跑自检）。
+            //    正常档（long 档内撞顶 = 预期）⇒ 同一形态只打一次 INFO；
+            //    异常档（未进 long 档却撞顶）⇒ 当场 WARN，不受「正常行条数上限」约束。
+            final ShanhaiLogThrottle.Verdict v = ShanhaiLogThrottle.decideEnergyWall(
+                    shanhai$GEN_WALL_GATE, parallel, beforeEu, afterEu, System.currentTimeMillis());
+            if (v.level == ShanhaiLogThrottle.Level.NONE) {
+                return;
+            }
+            if (v.abnormal) {
+                LOGGER.warn("[SHANHAI-GEN-LIMIT] 🔴 出乎预期的撞顶：p={} 未进 long 档（≤ {}）"
+                                + "却仍读到 tickOutputs.eu={}（乘前 {}）⇒ 请把这一行原文交回。"
+                                + "自上次落盘以来同形重复 {} 次已静默。",
+                        parallel, ShanhaiLogThrottle.INT_CEILING, afterEu, beforeEu, v.suppressed);
+            } else {
+                LOGGER.info("[SHANHAI-GEN-LIMIT] p={} 乘前 tickOutputs.eu={} ⇒ 乘后={}；撞 Long.MAX_VALUE 顶={}"
+                                + "（墙 = EURecipeCapability.copyWithModifier 的 Double.longValue() 窄化；"
+                                + "上游走 BigDecimal/BigInteger 分支绕开它）"
+                                + "【本行已改为「同一形态只打一次」：自上次落盘以来同形重复 {} 次已静默】",
+                        parallel, beforeEu, afterEu, afterEu == Long.MAX_VALUE, v.suppressed);
+            }
         } catch (Throwable t) {
             LOGGER.warn("[SHANHAI-GEN-LIMIT] 探针异常（已忽略，配方不受影响）：{}", t.toString());
         }
@@ -1385,8 +2325,11 @@ public final class PrimordialRecipeEffects {
      *   public int duration;              // ← copy() 会带上（构造器第 14 参）
      *   public int parallels = 1;         // ← copy() 不带：新实例恒为 1
      *   public int ocTier = 0;            // ← copy() 不带：新实例恒为 0
-     *   // gtlcore GTRecipeMixin：
-     *   &#64;Unique private long realParallels = 1L;   // ← copy() 更不带：新实例恒为 1
+     *   // gtlcore GTRecipeMixin（全部 @Unique，构造器都给初值）：
+     *   &#64;Unique private long    realParallels = 1L;        // ← copy() 不带：新实例恒为 1
+     *   &#64;Unique private int     batchSize = 1;             // ← copy() 不带：新实例恒为 1
+     *   &#64;Unique private boolean batchProcessed = false;    // ← copy() 不带：新实例恒为 false
+     *   &#64;Unique private boolean subTickParallelized = false; // ← copy() 不带：新实例恒为 false
      * </pre>
      * 证据：旧私货 {@code PrimordialRecipeOutputAmplifier.apply} 在 {@code recipe.copy()} 之后
      * 紧接着两行 {@code copy.parallels = recipe.parallels; copy.ocTier = recipe.ocTier;}
@@ -1400,6 +2343,26 @@ public final class PrimordialRecipeEffects {
      * （{@code [字节码]}）。⇒ 若不在后续副本里带上它，「实际跑了几个并行」会静默记成 1。
      * 用 {@code instanceof} 守卫而不是硬转：万一日后 gtlcore 不再对 {@code GTRecipe} 织入该接口，
      * 这里退化成「不复制」而<b>不是</b>抛 {@code ClassCastException}。
+     *
+     * <p>🔴🔴 <b>2026-09-27 再补三个：{@code batchProcessed} / {@code batchSize} / {@code subTickParallelized}。</b>
+     * 其中 {@code batchProcessed} 是「1 个铁锭 → 100 个铁板、跑 5 秒」那个 bug 的<b>真根因</b>：
+     * gtladditions 的引擎成品把它标成 {@code true}（"已经按批装配过了"），而它的 {@code inputs} 是
+     * <b>空的</b>（材料在引擎侧就扣完了）⇒ 标记一丢，gtlcore 就会对同一张配方再乘一次 batchSize，
+     * 结果只有 outputs 与 duration 被乘。完整推导、审计与正负对照见方法体里的注释与
+     * {@link #shanhai$auditBatchFlagOnce(GTRecipe)}。
+     *
+     * <p>🔴 <b>2026-09-27 同日两改（先后两次用户实机反馈）</b>：
+     * <ol>
+     *   <li>用户报「现在不会凭空生成物品了，但是批处理完全不生效了」⇒ 一度把批处理搬到
+     *       <b>并行分配那一步</b>（在 {@code calculateParallel} 里把并行数 ×N）。</li>
+     *   <li>🔴 用户 2026-09-27 再报「批处理还是没修好，<b>批处理应该是不影响机器的耗电的，
+     *       而且批处理应该是延长机器运行时间的</b>」⇒ 上面那一步<b>做成了"并行"而不是"批处理"</b>：
+     *       把 p 乘上去会让 {@code multipleRecipe} 连 {@code tickInputs}(EU/t) 一起乘
+     *       ⇒ <b>耗电 ×N</b>，而耗时反而被模块的 N6 钉回原值 ⇒ 与用户规格<b>正好相反</b>。
+     *       <b>该放大已整体删除</b>，批处理改为 {@link #applyBatchProcessing}
+     *       （在成品上"连跑 N 次"：输入 ×N／输出 ×N／<b>耗时 ×N</b>／<b>EU/t 不变</b>）。</li>
+     * </ol>
+     * <b>本方法照旧忠实搬运 {@code batchProcessed}</b>（它仍然是"不许让 gtlcore 再乘一次"的正确信号）。
      */
     private static GTRecipe guardedCopy(GTRecipe recipe, String step) {
         final int before = recipe.duration;
@@ -1416,8 +2379,97 @@ public final class PrimordialRecipeEffects {
         copy.ocTier = recipe.ocTier;
         if (recipe instanceof IGTRecipe source && copy instanceof IGTRecipe target) {
             target.setRealParallels(source.getRealParallels());
+            // 🔴🔴 2026-09-27 补第二个缺口：batchProcessed / batchSize / subTickParallelized。
+            //   【缺口本身】它们是 gtlcore 织进 GTRecipe 的 @Unique 字段（GTRecipeMixin）：
+            //       javap -p org.gtlcore.gtlcore.mixin.gtm.api.recipe.GTRecipeMixin
+            //         private long    realParallels;      ← 初值 1（构造器里 putfield）
+            //         private int     batchSize;          ← 初值 1
+            //         private boolean batchProcessed;     ← 初值 false
+            //         private boolean subTickParallelized;← 初值 false
+            //     而 GTRecipe.copy() 造的是【新实例】（[字节码] 走构造器，这些字段不是构造器形参）
+            //     ⇒ 四个字段全部回到初值。realParallels 上方已补；剩下三个今天才补。
+            //   【为什么非要补 batchProcessed（本 bug 的真根因）】
+            //     gtladditions 的多配方引擎在装配成品时【显式】把它标成 true：
+            //       RecipeCalculationHelper.buildNormalRecipe   末尾：IGTRecipe.of(built).setBatchProcessed(true);
+            //       RecipeCalculationHelper.buildWirelessRecipe 末尾：同一句（[字节码] invokeinterface #462）
+            //     语义 = 「这张配方已经由引擎按批装配过了，别再乘一次」。
+            //     更关键的是：引擎成品的 inputs 是【空的】——
+            //       buildNormalRecipe 的字节码只写 outputs / tickInputs(只放 EU) / duration，
+            //       **从头到尾没有一条对 GTRecipe.inputs 的 put**（材料早在
+            //       calculateParallelsWithGreedyAllocation 里由 handleRecipeInput 扣掉了）。
+            //     ⇒ 一旦这个标记被 copy() 洗掉，gtlcore 的 BatchProcessing 会在
+            //       RecipeLogicMixin.handleRecipeIO(GTRecipe, IO.IN) 里对同一张配方再放大一次：
+            //       scaleRecipe(recipe, batchSize) 对【四张表】同乘 —— 但 inputs 是空的，乘了还是空的；
+            //       outputs ×batchSize、duration ×batchSize（tickInputs 被原样写回 ⇒ EU/t 不变）。
+            //       ⇒ 净效果 = 【输出凭空多 batchSize 倍、料一份没多要、时间 ×batchSize】。
+            //         这正是用户 2026-09-27 报的「开批处理 + 输入 1 个铁锭 ⇒ 跑 5 秒、出 100 个铁板」。
+            //   【审计（这条修法为什么只影响坏的那一支）】
+            //     `isBatchProcessed` 在整个 gtlcore jar 里只有【一个读点】：
+            //       findstr /s /m /c:"isBatchProcessed" <extracted gtlcore>
+            //         → BatchProcessing.class / IGTRecipe.class / GTRecipeMixin.class（后两个只是声明）
+            //     而 BatchProcessing.apply(...) 的第一件事就是
+            //       [字节码] 123: IGTRecipe.of(recipe).isBatchProcessed() → ifeq 137 / 135: return recipe;
+            //     ⇒ 标记在位 ⇒ 整个批处理放大被跳过（applyInPlace 随之在 `scaled == recipe` 处直接 return true）。
+            //     其余读点全是 `getBatchSize()`（Jade 显示 / GTRecipePayloadMixin / 主机的
+            //     gtlcore$finishRecipeWhenBatchOutputFits），与本次改动无关。
+            //   ⚠️ 原生 recipeModifier 链（ModuleRegistry 那条）不受影响：gtlcore 是在
+            //      RecipeModifierListMixin.apply 的【最后一句】才调 BatchProcessing.apply，
+            //      我们的尾链修饰器跑在它【之前】，那时源配方的 batchProcessed 本来就是 false
+            //      ⇒ 补的是 false，逐值等价。
+            final boolean batchProcessed = source.isBatchProcessed();
+            target.setBatchProcessed(batchProcessed);
+            target.setBatchSize(source.getBatchSize());
+            if (source.isSubTickParallelized()) {
+                target.setSubTickParallelized(true);
+            }
+            if (batchProcessed) {
+                shanhai$auditBatchFlagOnce(recipe);
+            }
         }
         return copy;
+    }
+
+    /** 上面那条自检的一次性闸门（只在真的见到「引擎已按批装配」的配方时打一行）。 */
+    private static boolean shanhai$batchFlagAudited;
+
+    /**
+     * 🔴 <b>「批处理标记被 copy() 洗掉」的可 grep 证据行（一次性 · 正负对照自证）</b>。
+     *
+     * <p>只在这条路径上真的拿到一张 {@code batchProcessed == true} 的配方时打一次，内容包含：
+     * <ol>
+     *   <li>{@code 源=true} —— 上游 gtladditions 确实标了（这一步跑不到 ⇒ 说明本链没经过引擎成品）；</li>
+     *   <li>{@code 无补偿副本=false} —— <b>负面对照</b>：现场再 {@code copy()} 一次、不做任何补偿，
+     *       读回 false ⇒ 证明「缺口真实存在」，也证明这行本身不是橡皮图章；</li>
+     *   <li>{@code 补偿后=true} —— <b>正面对照</b>：{@link #guardedCopy} 修好之后必须读回 true；
+     *       若这里读到 false ⇒ 修法没生效，本行会直接喊 FAIL。</li>
+     * </ol>
+     * 顺带打印引擎成品的 {@code inputs} 规模 —— 它是「输出能乘、料没得乘」那一半的现场读数。
+     */
+    private static void shanhai$auditBatchFlagOnce(GTRecipe source) {
+        if (shanhai$batchFlagAudited) {
+            return;
+        }
+        shanhai$batchFlagAudited = true;
+        try {
+            final GTRecipe control = source.copy();     // 故意不补偿 = 修复前的行为
+            final boolean controlFlag = control instanceof IGTRecipe c && c.isBatchProcessed();
+            final GTRecipe fixed = guardedCopy(source, "批处理标记自检");
+            final boolean fixedFlag = fixed instanceof IGTRecipe f && f.isBatchProcessed();
+            final boolean ok = !controlFlag && fixedFlag;
+            LOGGER.info("[SHANHAI-BATCH] 批处理标记自检（一次性）：源 batchProcessed={} ／ 无补偿副本={}（= 修复前的行为，"
+                            + "失去标记 ⇒ gtlcore 会再乘一次 batchSize）／ 补偿后={} ⇒ {}；"
+                            + "现场配方规模：inputs 条目={}（capabilities）／ outputs 条目={} ／ duration={} ／ "
+                            + "realParallels={} batchSize={}。"
+                            + "（inputs=0 是引擎成品的常态：材料在引擎侧已扣，buildNormalRecipe 从不写 inputs）",
+                    ((IGTRecipe) source).isBatchProcessed(), controlFlag, fixedFlag,
+                    ok ? "PASS（标记已保留 ⇒ gtlcore 不会再乘一次 batchSize；"
+                            + "批处理改由 applyBatchProcessing 在成品上按「连跑 N 次」施加）"
+                            : "🔴 FAIL（修法没生效，请把本行原文交回）",
+                    source.inputs.size(), source.outputs.size(), source.duration,
+                    ((IGTRecipe) source).getRealParallels(), ((IGTRecipe) source).getBatchSize());
+        } catch (Throwable t) {
+            LOGGER.error("[SHANHAI-BATCH] 批处理标记自检自身异常（不影响配方）：{}", t.toString());
+        }
     }
 
     /** {@code Math.round} 到 int，并饱和到 {@code [1, Integer.MAX_VALUE]}（不溢出成负数）。 */

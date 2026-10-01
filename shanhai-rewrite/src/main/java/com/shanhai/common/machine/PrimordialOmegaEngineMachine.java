@@ -25,6 +25,7 @@ import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
 import com.lowdragmc.lowdraglib.syncdata.annotation.Persisted;
 import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import com.shanhai.ShanhaiMod;
+import com.shanhai.client.compat.ConfiguratorTabGridCompat;
 import com.shanhai.common.compat.GtlAddCompat;
 import com.shanhai.common.recipe.PrimordialRecipeEffects;
 import com.shanhai.config.ShanhaiConfig;
@@ -97,7 +98,8 @@ import java.util.Set;
  */
 public class PrimordialOmegaEngineMachine
         extends WorkableElectricMultiblockMachine
-        implements IModularMachineHost<PrimordialOmegaEngineMachine>, IMachineLife, IGTLAddMultiRecipeMachine, IBatchMachine {
+        implements IModularMachineHost<PrimordialOmegaEngineMachine>, IMachineLife, IGTLAddMultiRecipeMachine, IBatchMachine,
+                   ParallelOverrideMachine {
 
     /** 规格 §3.2 ⑥：16 个模块位。不覆写 {@code getMaxModuleCount()} 就永远不是 16。 */
     public static final int MAX_MODULE_COUNT = 16;
@@ -229,7 +231,12 @@ public class PrimordialOmegaEngineMachine
         //   数值与改动前【逐位相同】（改前 = MAX_PARALLEL_DISPLAY = Integer.MAX_VALUE = 2147483647），
         //   变化的是"这个 2147483647 从哪来"：以前是一个自定的 int 常量，
         //   现在是 Long.MAX_VALUE 经过饱和桥之后的必然结果。
-        return Ints.saturatedCast(MAX_PARALLEL);
+        // 🔴 2026-09-27：改成经 getRecipeLogicMaxParallel() 取 —— 玩家在「并行数」面板里填的覆盖值
+        //    必须同时作用到这条 int 桥（Jade 的 ParallelProvider、gtlcore 的 ParallelMachine 读点、
+        //    BatchProcessing.isCustomSubTickParallelized 都读它），否则会出现"引擎改了、显示没改"。
+        //    ⚠️ 未覆盖时逐值不变：getRecipeLogicMaxParallel() 此时返回 MAX_PARALLEL ⇒ 饱和后仍是
+        //       MAX_PARALLEL_INT = 2147483647（改动前那个数，一个 bit 都没动）。
+        return Ints.saturatedCast(getRecipeLogicMaxParallel());
     }
 
     /**
@@ -260,7 +267,102 @@ public class PrimordialOmegaEngineMachine
      * （{@code Long.MAX × 128 ⇒ Long.MAX}，不回绕）。
      */
     public long getRecipeLogicMaxParallel() {
-        return Math.max(1L, MAX_PARALLEL);
+        // 🔴 2026-09-27：「并行数」面板里玩家填的覆盖值在这里生效（{@code 0} = 自动 ⇒ 返回 MAX_PARALLEL）。
+        //    这一处是主机侧【引擎路径】的唯一读点（PrimordialEngineRecipeLogic#calculateParallels），
+        //    另一条路是原生修饰链里的 applyHostRecipeModifier —— 那里已同步改成读本方法（见那一行注释）。
+        return Math.max(1L, getEffectiveParallel());
+    }
+
+    // ═════════════════════════ 玩家可调的并行数（2026-09-27 新增） ═════════════════════════
+
+    /**
+     * 🔴 <b>玩家覆盖的并行数上限；{@code 0} = 未覆盖（用本机自带的 MAX_PARALLEL）。</b>
+     *
+     * <h2>用户原话（逐字）</h2>
+     * <blockquote>「在模块和主机的左下角再新增一个全新的按钮，他可以调节主机或者模块的并行数，
+     * 作为一个输入框，可以让玩家输入数字，并且右边有一个一键调至最大的按钮」</blockquote>
+     *
+     * <h2>为什么主机侧要动【两处】而不是一处（与模块侧的关键不对称）</h2>
+     * <pre>
+     *   ① 引擎路径（现行主路径）：PrimordialEngineRecipeLogic#calculateParallels()
+     *         → host.getRecipeLogicMaxParallel()                ← 本字段经 getEffectiveParallel() 到达
+     *   ② 原生修饰链：applyHostRecipeModifier(...) 里那一句 applyParallel(modified, host, MAX_PARALLEL_INT)
+     *         —— 它【原来直接吃常量、不读任何方法】⇒ 只改 ① 会出现"填了值、引擎变了、修饰链没变"
+     *            的静默半生效。那一行已改成读 getRecipeLogicMaxParallel()（未覆盖时逐值不变）。
+     * </pre>
+     *
+     * <h2>{@code @Persisted} / {@code @DescSynced}</h2>
+     * 同「配方最短耗时」（{@code limitedDuration}）那一对：{@code @Persisted} 让拆装/重载后保持，
+     * {@code @DescSynced} 让客户端输入框读到服务端的权威值（否则客户端永远显示 0 = 假数据）。
+     * 两个注解写在本类里即自动进 {@code MANAGED_FIELD_HOLDER}（按【类】反射登记字段）。
+     */
+    @Persisted
+    @DescSynced
+    private long parallelOverride = ParallelOverrideMachine.PARALLEL_AUTO;
+
+    @Override
+    public long getParallelOverride() {
+        return parallelOverride;
+    }
+
+    /**
+     * 写入覆盖值：<b>先钳位 → 没变直接返回 → 真变了才 {@code notifyBlockUpdate()}</b>。
+     * 形状与 {@link #setLimitedDuration(int)} 逐字一致（本工程"玩家改一个数"的既有规范写法）。
+     *
+     * <p>🔴 <b>2026-09-27：钳位改成"按本机当前能达到的并行数上钳"</b>
+     * （{@link ParallelOverrideMachine#clampOverrideToCeiling(long)}），用户原话：
+     * 「不允许玩家输入超出机器可以达到最大并行数的数字」。
+     * <b>主机侧这一条是恒等操作</b>：本机的自动值就是 {@link #MAX_PARALLEL}（long 上限），
+     * 天花板 = 它 ⇒ 钳位不会改变任何输入值（用户口径 ④）。
+     */
+    @Override
+    public void setParallelOverride(long value) {
+        final long next = clampOverrideToCeiling(value);
+        if (next == parallelOverride) {
+            return;
+        }
+        parallelOverride = next;
+        notifyBlockUpdate();
+    }
+
+    /**
+     * 🔴 <b>本机当前能达到的并行数 —— 「一键最大」填的就是它（2026-09-27 语义改正）。</b>
+     *
+     * <pre>
+     *   ⛔ 上一版：返回 MAX_PARALLEL（一个与"自动值"同值、但名字写成"天花板"的常量）
+     *   ✅ 现行  ：返回 {@link #getAutoParallel()} —— 语义与用户口径逐字对齐
+     *             「一键最大是到机器可以达到的并行数（也就是设置 0 时机器的并行数）」
+     * </pre>
+     * <b>逐值对照</b>：本主机的自动值就是 {@link #MAX_PARALLEL} ⇒
+     * <b>返回值与上一版完全相同，主机侧一个 bit 都没动</b>；
+     * 改的只是"这个数从哪来"（常量 → 自动值），从此不会与 {@link #getAutoParallel()} 漂移。
+     */
+    @Override
+    public long getParallelOverrideCeiling() {
+        return getAutoParallel();
+    }
+
+    @Override
+    public long getAutoParallel() {
+        return MAX_PARALLEL;
+    }
+
+    /**
+     * 覆盖生效之后的并行。
+     *
+     * <p>🔴 2026-09-27：多了一道 {@code min(…, 天花板)}。
+     * 主机侧<b>恒等</b>（天花板 = {@link #MAX_PARALLEL} = {@code Long.MAX_VALUE}，
+     * {@code min(任何 long, Long.MAX_VALUE)} 就是它自己）⇒ <b>逐值等价于改动前</b>。
+     * 加它的理由：宿主 {@link ParallelOverrideMachine} 的契约在模块侧需要这条不变式
+     * （覆盖值永远不许超过机器能达到的并行数），两侧共用同一句写法才不会漂移。
+     */
+    @Override
+    public long getEffectiveParallel() {
+        final long auto = Math.max(1L, getAutoParallel());
+        if (parallelOverride > ParallelOverrideMachine.PARALLEL_AUTO) {
+            return Math.min(parallelOverride, auto);
+        }
+        return auto;
     }
 
     /**
@@ -1464,7 +1566,12 @@ public class PrimordialOmegaEngineMachine
         //    int 形参的上游出口只能吃 int ⇒ 这里必须传饱和桥（MAX_PARALLEL_INT = 2147483647），
         //    不能传 MAX_PARALLEL（long）本身；改前这里传的是 1<<30（2^30）——
         //    口径统一到"老山海的饱和值"，且这条路线上两值都远超任何真实配方需求。
-        modified = PrimordialRecipeEffects.applyParallel(modified, host, MAX_PARALLEL_INT);
+        // 🔴 2026-09-27：实参从常量 MAX_PARALLEL_INT 改成读 getRecipeLogicMaxParallel() 的饱和桥。
+        //    原因 = 新增的「并行数」玩家覆盖必须在这条路上也生效（只改引擎路径会出现"半生效"）。
+        //    逐值对照：未覆盖时 getRecipeLogicMaxParallel() = MAX_PARALLEL（long）
+        //    ⇒ Ints.saturatedCast(...) = MAX_PARALLEL_INT ⇒ 【与改动前那个实参完全相同】。
+        modified = PrimordialRecipeEffects.applyParallel(modified, host,
+                Ints.saturatedCast(host.getRecipeLogicMaxParallel()));
         modified = PrimordialRecipeEffects.auditDuration(modified, durationAtEntry, "主机-修饰链-N4-并行后");
 
         // ②③④ N3 产出倍率 → N6 时长（天花板）→ N5 耗电减免：
@@ -1934,7 +2041,13 @@ public class PrimordialOmegaEngineMachine
                         + String.format(java.util.Locale.ROOT, "%.1f", reductionRatio * 100.0D) + "%）"
                         + (bonus > 0 ? "" : "（未生效，专属槽满 64 后生效）"))
                 .withStyle(bonus > 0 ? ChatFormatting.YELLOW : ChatFormatting.DARK_GRAY));
-        textList.add(Component.literal("并行上限：2^30（无限档；实际并行由输入量与输出空间决定）")
+        // 🔴 2026-09-27 订正：原文写死「2^30」。那是 MAX_PARALLEL 变成 Long.MAX_VALUE 之前的旧值，
+        //    属于本工程红线「活的界面上不许放假数据」点名的形态 ⇒ 改成读真实值（同一条链上的生效值）。
+        //    有玩家覆盖时如实写明是玩家设定的数（覆盖是"上限"，不是"精确并行"）。
+        textList.add(Component.literal("并行上限：" + getEffectiveParallel()
+                        + (getParallelOverride() > ParallelOverrideMachine.PARALLEL_AUTO
+                                ? "（玩家设定；实际并行由输入量与输出空间决定）"
+                                : "（本机上限；实际并行由输入量与输出空间决定）"))
                 .withStyle(ChatFormatting.GRAY));
     }
 
@@ -2085,6 +2198,36 @@ public class PrimordialOmegaEngineMachine
      */
     @Override
     public void attachConfigurators(ConfiguratorPanel panel) {
+        // ─────────── 🔴 2026 本轮：侧栏按钮列【太长】⇒ 改成超级样板总成那种 4 行网格 ───────────
+        // 用户原话（逐字）：「还有一件事，主机的左下角列表太长了，可以改成像超级样板总成这样的」。
+        //
+        // 🔴 本机侧栏一共 7 个 tab（按 attach 顺序自上而下）：
+        //     ① 工作开关      —— GTCEu `IFancyUIMachine.attachConfigurators` 的 default
+        //                        （本机经 IRecipeLogicMachine → IWorkable → IControllable 命中）
+        //     ② 超频          —— 同上 default（本机 implements IOverclockMachine，见 WorkableElectricMultiblockMachine
+        //                        的类声明，javap 核实）
+        //     ③ 球体风格      —— 本方法下面挂的（中子星 / 鸿蒙微型宇宙）
+        //     ④ 配方最短耗时  —— gtladditions 的 LimitedDurationConfigurator
+        //     ⑤ 中子星渲染    —— 本工程的 StarRenderConfigurator
+        //     ⑥ 始终渲染为工作—— 本工程的 Toggle
+        //     ⑦ 并行数        —— 本工程的 ParallelOverrideConfigurator
+        //   ⇒ 7 × (24+2) − 2 = 180px 的一条竖列，底对齐窗口下沿 ⇒ 面板顶部一路顶到 guiHeight−184，
+        //     这就是用户说的「太长了」。
+        //   ⚠️ 「批处理」那个 tab 不在列表里：本机 canConfigureBatchProcessing() 返回 false，
+        //      gtlcore 的 BatchConfiguratorMixin → IBatchMachine.attachBatchConfigurator 直接 return。
+        //
+        // 🔴 改动本身只有一行 —— 复用 gtlcore 已有的同一套布局（不是新写 mixin、不是布局代码）：
+        //    MEStorageConfiguratorTabLayout（org.gtlcore.gtlcore.client.gui）把 tab 按
+        //    TABS_PER_COLUMN = 4 摆成"每列 4 行、第 5 个起向左另起一列"的网格，
+        //    并由 gtlcore 的 ConfiguratorPanelMixin 在每次 attachConfigurators 的 TAIL 上自动重排。
+        //    它原本只对 MEHatchPartMachine / MEPatternBufferPartMachineBase（= 超级样板总成）打开
+        //    （gtlcore FancyMachineUIWidgetMixin @HEAD of setupFancyUI），本机不在那两个类型里 ⇒ 默认是关的。
+        //    ⇒ 我们把它打开，观感就与超级样板总成【完全一致】（同一段算法，不是"照着做一遍"）。
+        //    详细证据链 / 三条备选路的取舍，见 ConfiguratorTabGridCompat 的类注释。
+        //
+        // ⚠️ 必须放在【第一次 panel.attachConfigurators(...) 之前】（即 super 之前）：
+        //    gtlcore 的重排挂在 attachConfigurators 的 TAIL 上，开关之前挂的 tab 要等下一次挂载才被重排。
+        ConfiguratorTabGridCompat.enableTabGrid(panel);
         super.attachConfigurators(panel);
         panel.attachConfigurators(new IFancyConfiguratorButton.Toggle(
                         GuiTextures.BUTTON_SWITCH_VIEW.getSubTexture(0.0D, 0.0D, 1.0D, 0.5D),
@@ -2148,6 +2291,16 @@ public class PrimordialOmegaEngineMachine
                         (clickData, pressed) ->
                                 setStarAlwaysWorking(Boolean.TRUE.equals(pressed)))
                 .setTooltipsSupplier(PrimordialOmegaEngineMachine::starAlwaysWorkingTooltips));
+
+        // ─────────────────── 🔴 并行数（2026-09-27 新增 · 侧栏【最后一个】= 左下角最下面） ───────────────────
+        // 用户原话：「在模块和主机的左下角再新增一个全新的按钮，他可以调节主机或者模块的并行数，
+        //            作为一个输入框，可以让玩家输入数字，并且右边有一个一键调至最大的按钮」。
+        // 位置纪律与上面那条完全同源：attach 顺序 = 自上而下（Tab 的 y = index*(tabSize+2)），
+        // 整条底对齐（FancyMachineUIWidget.setupFancyUI：guiHeight - panelHeight - 4）
+        // ⇒ 挂在【末尾】的这一个落在整条最下面 = 用户指定的「左下角」。
+        // ⚠️ 必须挂在【最后】：本方法前面挂着球体风格 / 配方最短耗时 / 中子星渲染 / 始终工作 四个，
+        //    任何插在中间的写法都会把这条挤走。
+        panel.attachConfigurators(new ParallelOverrideConfigurator(this));
     }
 
     /**

@@ -8,6 +8,13 @@
 //   🔴 用户 2026-09-26：上标【质量数】不参与计数（U²³⁸ 算 U:1，不是 U:238）
 //   🔴 用户 2026-09-26：配方 id 全带 namespace（旧规则丢 namespace，导致 ruridit 撞车）
 //   已跳过 5 个有手写配方的材质；注册前读 global.SD_EXTRA（表不存在则 {}，不报错）
+//   🔴 2026-09-30（本轮）自环判据：输入物品 == 输出物品 ⇒ 不生成（用户拍板「A. 删掉」）
+//      判据：①物品输入 ②输出物品恰好一项 ③其 id == 输入 id ④其数量 == 输入数量 ⑤无流体输出
+//      ⚠️ 流体形态（1000mB <材质> → 1x <材质>_dust）不参与本判据 ⇒ 保留
+//   🔴 2026-09-30 新增批：矿物粉（集成矿石处理厂产物）→ 元素单质 —— 见下面 ORE_JOBS 段
+//      数据源 kubejs/_generators/data/ore_deconstruct_jobs.json；只加现有批次没覆盖的矿物粉 ⇒ 零冲突
+//   🔴 2026-09-30（本轮）口径：G3 = 必须精确整数配比（N ≤ 64 优先，否则用【精确 N，不设上限】）
+//      深度化学扭曲仪（gtceu:distort）配比优先（更省时以它为准）；覆盖条目的证据行见 OV_EV 段，可 grep
 ServerEvents.recipes(function (event) {
     var gtr = event.recipes.gtceu
     // 🔴 2026-09-27 接进配方统计（用户：「以后配方添加之后都检查一下」）
@@ -21,20 +28,194 @@ ServerEvents.recipes(function (event) {
     // 🔴 元素符号 -> 材质 id（生成期固化，供 set 覆盖输出时定位）
     var SYM2MAT = {"Ac":"gtceu:actinium","Al":"gtceu:aluminium","Am":"gtceu:americium","Sb":"gtceu:antimony","Ar":"gtceu:argon","As":"gtceu:arsenic","At":"gtceu:astatine","Ba":"gtceu:barium","Bk":"gtceu:berkelium","Be":"gtceu:beryllium","Bi":"gtceu:bismuth","Bh":"gtceu:bohrium","B":"gtceu:boron","Br":"gtceu:bromine","Cs":"gtceu:caesium","Ca":"gtceu:calcium","Cf":"gtceu:californium","C":"gtceu:carbon","Cd":"gtceu:cadmium","Ce":"gtceu:cerium","Cl":"gtceu:chlorine","Cr":"gtceu:chromium","Co":"gtceu:cobalt","Cn":"gtceu:copernicium","Cu":"gtceu:copper","Cm":"gtceu:curium","Ds":"gtceu:darmstadtium","D":"gtceu:deuterium","Db":"gtceu:dubnium","Dy":"gtceu:dysprosium","Es":"gtceu:einsteinium","Er":"gtceu:erbium","Eu":"gtceu:europium","Fm":"gtceu:fermium","Fl":"gtceu:flerovium","F":"gtceu:fluorine","Fr":"gtceu:francium","Gd":"gtceu:gadolinium","Ga":"gtceu:gallium","Ge":"gtceu:germanium","Au":"gtceu:gold","Hf":"gtceu:hafnium","Hs":"gtceu:hassium","Ho":"gtceu:holmium","H":"gtceu:hydrogen","He":"gtceu:helium","He-3":"gtceu:helium_3","In":"gtceu:indium","I":"gtceu:iodine","Ir":"gtceu:iridium","Fe":"gtceu:iron","Kr":"gtceu:krypton","La":"gtceu:lanthanum","Lr":"gtceu:lawrencium","Pb":"gtceu:lead","Li":"gtceu:lithium","Lv":"gtceu:livermorium","Lu":"gtceu:lutetium","Mg":"gtceu:magnesium","Md":"gtceu:mendelevium","Mn":"gtceu:manganese","Mt":"gtceu:meitnerium","Hg":"gtceu:mercury","Mo":"gtceu:molybdenum","Mc":"gtceu:moscovium","Nd":"gtceu:neodymium","Ne":"gtceu:neon","Np":"gtceu:neptunium","Ni":"gtceu:nickel","Nh":"gtceu:nihonium","Nb":"gtceu:niobium","N":"gtceu:nitrogen","No":"gtceu:nobelium","Og":"gtceu:oganesson","Os":"gtceu:osmium","O":"gtceu:oxygen","Pd":"gtceu:palladium","P":"gtceu:phosphorus","Po":"gtceu:polonium","Pt":"gtceu:platinum","Pu-239":"gtceu:plutonium","Pu-241":"gtceu:plutonium_241","K":"gtceu:potassium","Pr":"gtceu:praseodymium","Pm":"gtceu:promethium","Pa":"gtceu:protactinium","Rn":"gtceu:radon","Ra":"gtceu:radium","Re":"gtceu:rhenium","Rh":"gtceu:rhodium","Rg":"gtceu:roentgenium","Rb":"gtceu:rubidium","Ru":"gtceu:ruthenium","Rf":"gtceu:rutherfordium","Sm":"gtceu:samarium","Sc":"gtceu:scandium","Sg":"gtceu:seaborgium","Se":"gtceu:selenium","Si":"gtceu:silicon","Ag":"gtceu:silver","Na":"gtceu:sodium","Sr":"gtceu:strontium","S":"gtceu:sulfur","Ta":"gtceu:tantalum","Tc":"gtceu:technetium","Te":"gtceu:tellurium","Ts":"gtceu:tennessine","Tb":"gtceu:terbium","Th":"gtceu:thorium","Tl":"gtceu:thallium","Tm":"gtceu:thulium","Sn":"gtceu:tin","Ti":"gtceu:titanium","T":"gtceu:tear","W":"gtceu:tungsten","U-238":"gtceu:uranium","U-235":"gtceu:uranium_235","V":"gtceu:vanadium","Xe":"gtceu:xenon","Yb":"gtceu:ytterbium","Y":"gtceu:yttrium","Zn":"gtceu:zinc","Zr":"gtceu:zirconium","Nq":"gtceu:naquadah","Nq+":"gtceu:enriched_naquadah","*Nq*":"gtceu:naquadria","Nt":"gtceu:neutronium","Tr":"gtceu:tritanium","Dr":"gtceu:duranium","Ke":"gtceu:trinium","An":"gtceu:adamantium","Qt":"gtceu:quantanium","Vi":"gtceu:vibranium","Dc":"gtceu:draconium","§8§kchaos":"gtceu:chaos","Hy⚶":"gtceu:hypogen","Sh⏧":"gtceu:shirabon","Mi":"gtceu:mithril","Tn":"gtceu:taranium","§b§ke§r§b✧§ke":"gtceu:crystalmatrix","Cnt":"gtceu:cosmicneutronium","Ec":"gtceu:echoite","Le":"gtceu:legendarium","✵Dc✵":"gtceu:draconiumawakened","Ad":"gtceu:adamantine","St":"gtceu:starmetal","Or":"gtceu:orichalcum","If":"gtceu:infuscolium","En":"gtceu:enderium","Et❃":"gtceu:eternity","M⎋":"gtceu:magmatter","§bRe":"gtceu:degenerate_rhenium","§b§ke§r§b(u₂);d§ke":"gtceu:heavy_quark_degenerate_matter","§b§ke§r§b(u₂);d(c₂);s(t₂);bg§ke":"gtceu:quantumchromodynamically_confined_matter","§kmetal":"gtceu:transcendentmetal","Ur":"gtceu:uruium","§6§kestar_matter":"gtceu:raw_star_matter","§kestar_matter":"gtceu:black_dwarf_mtter","✧◇✧":"gtceu:astraltitanium","✦◆✦":"gtceu:celestialtungsten","M":"gtceu:attuned_tengam","Yb¹⁷⁸":"gtceu:ytterbium_178","§5§kemana":"gtceu:mana","§ke§re§ke":"gtceu:free_electron_gas","§ke§rα§ke":"gtceu:free_alpha_gas","§ke§rp§ke":"gtceu:free_proton_gas","§ke§r(u2);d(c2);s(t2);bg§ke":"gtceu:quark_gluon","§ke§r(u₂);d§ke":"gtceu:heavy_quarks","§ke§r(c₂);(t₂);b§ke":"gtceu:light_quarks","§ke§rg§ke":"gtceu:gluons","Ti⁵⁰":"gtceu:titanium_50","§ke§r(t₂);u§ke":"gtceu:heavy_lepton_mixture","§ke§r(u₂);d(c₂);s(t₂);b§ke":"gtceu:high_energy_quark_gluon","§9Sl":"gtceu:starlight","§ke§rn§ke":"gtceu:dense_neutron","§ketime":"gtceu:temporalfluid","§kcm":"gtceu:cosmic_mesh","Fs⚶":"gtceu:rhugnor","Cu⁷⁶":"gtceu:copper76","§7熔炼为流体的时空":"gtceu:spacetime","∞":"gtceu:infinity","?":"gtceu:instability","Ct":"gtceu:celestial_secret","⸎":"gtladditions:creon","U":"gtceu:uranium","Pu":"gtceu:plutonium","§ke§r(u₂);d(c₂);s(t₂);bg§ke":"gtceu:high_energy_quark_gluon"}
     var ok = 0, bad = 0, errList = ''
+    // ══════ 🔴 自环判据（输入物品 == 输出物品 ⇒ 不生成）══════
+    //   用户 2026-09-30 拍板（选择题）：「A. 删掉（推荐）」
+    //   判据：①物品输入 ②输出物品恰好一项 ③其 id == 输入 id ④其数量 == 输入数量 ⑤无流体输出 ⇒ 恒等配方 ⇒ 跳过
+    //   本轮跳过 177 条（全部是元素单质自身的粉 1x→1x）；逐条如下，可 grep [SHANHAI-SELFLOOP]
+    //   ⚠️ 流体形态（1000mB <材质> → 1x <材质>_dust）【不参与】本判据 ⇒ 本轮 141 条全部保留
+    //   [SHANHAI-SELFLOOP] 锕粉  shanhai:deconstruct/gtceu_actinium_dust   1x gtceu:actinium_dust -> 1x gtceu:actinium_dust
+    //   [SHANHAI-SELFLOOP] 铝粉  shanhai:deconstruct/gtceu_aluminium_dust   1x gtceu:aluminium_dust -> 1x gtceu:aluminium_dust
+    //   [SHANHAI-SELFLOOP] 镅粉  shanhai:deconstruct/gtceu_americium_dust   1x gtceu:americium_dust -> 1x gtceu:americium_dust
+    //   [SHANHAI-SELFLOOP] 锑粉  shanhai:deconstruct/gtceu_antimony_dust   1x gtceu:antimony_dust -> 1x gtceu:antimony_dust
+    //   [SHANHAI-SELFLOOP] 砷粉  shanhai:deconstruct/gtceu_arsenic_dust   1x gtceu:arsenic_dust -> 1x gtceu:arsenic_dust
+    //   [SHANHAI-SELFLOOP] 砹粉  shanhai:deconstruct/gtceu_astatine_dust   1x gtceu:astatine_dust -> 1x gtceu:astatine_dust
+    //   [SHANHAI-SELFLOOP] 钡粉  shanhai:deconstruct/gtceu_barium_dust   1x gtceu:barium_dust -> 1x gtceu:barium_dust
+    //   [SHANHAI-SELFLOOP] 锫粉  shanhai:deconstruct/gtceu_berkelium_dust   1x gtceu:berkelium_dust -> 1x gtceu:berkelium_dust
+    //   [SHANHAI-SELFLOOP] 铍粉  shanhai:deconstruct/gtceu_beryllium_dust   1x gtceu:beryllium_dust -> 1x gtceu:beryllium_dust
+    //   [SHANHAI-SELFLOOP] 铋粉  shanhai:deconstruct/gtceu_bismuth_dust   1x gtceu:bismuth_dust -> 1x gtceu:bismuth_dust
+    //   [SHANHAI-SELFLOOP] 钅波粉  shanhai:deconstruct/gtceu_bohrium_dust   1x gtceu:bohrium_dust -> 1x gtceu:bohrium_dust
+    //   [SHANHAI-SELFLOOP] 硼粉  shanhai:deconstruct/gtceu_boron_dust   1x gtceu:boron_dust -> 1x gtceu:boron_dust
+    //   [SHANHAI-SELFLOOP] 铯粉  shanhai:deconstruct/gtceu_caesium_dust   1x gtceu:caesium_dust -> 1x gtceu:caesium_dust
+    //   [SHANHAI-SELFLOOP] 钙粉  shanhai:deconstruct/gtceu_calcium_dust   1x gtceu:calcium_dust -> 1x gtceu:calcium_dust
+    //   [SHANHAI-SELFLOOP] 锎粉  shanhai:deconstruct/gtceu_californium_dust   1x gtceu:californium_dust -> 1x gtceu:californium_dust
+    //   [SHANHAI-SELFLOOP] 碳粉  shanhai:deconstruct/gtceu_carbon_dust   1x gtceu:carbon_dust -> 1x gtceu:carbon_dust
+    //   [SHANHAI-SELFLOOP] 镉粉  shanhai:deconstruct/gtceu_cadmium_dust   1x gtceu:cadmium_dust -> 1x gtceu:cadmium_dust
+    //   [SHANHAI-SELFLOOP] 铈粉  shanhai:deconstruct/gtceu_cerium_dust   1x gtceu:cerium_dust -> 1x gtceu:cerium_dust
+    //   [SHANHAI-SELFLOOP] 铬粉  shanhai:deconstruct/gtceu_chromium_dust   1x gtceu:chromium_dust -> 1x gtceu:chromium_dust
+    //   [SHANHAI-SELFLOOP] 钴粉  shanhai:deconstruct/gtceu_cobalt_dust   1x gtceu:cobalt_dust -> 1x gtceu:cobalt_dust
+    //   [SHANHAI-SELFLOOP] 钅哥粉  shanhai:deconstruct/gtceu_copernicium_dust   1x gtceu:copernicium_dust -> 1x gtceu:copernicium_dust
+    //   [SHANHAI-SELFLOOP] 铜粉  shanhai:deconstruct/gtceu_copper_dust   1x gtceu:copper_dust -> 1x gtceu:copper_dust
+    //   [SHANHAI-SELFLOOP] 锔粉  shanhai:deconstruct/gtceu_curium_dust   1x gtceu:curium_dust -> 1x gtceu:curium_dust
+    //   [SHANHAI-SELFLOOP] 钅达粉  shanhai:deconstruct/gtceu_darmstadtium_dust   1x gtceu:darmstadtium_dust -> 1x gtceu:darmstadtium_dust
+    //   [SHANHAI-SELFLOOP] 钅杜粉  shanhai:deconstruct/gtceu_dubnium_dust   1x gtceu:dubnium_dust -> 1x gtceu:dubnium_dust
+    //   [SHANHAI-SELFLOOP] 镝粉  shanhai:deconstruct/gtceu_dysprosium_dust   1x gtceu:dysprosium_dust -> 1x gtceu:dysprosium_dust
+    //   [SHANHAI-SELFLOOP] 锿粉  shanhai:deconstruct/gtceu_einsteinium_dust   1x gtceu:einsteinium_dust -> 1x gtceu:einsteinium_dust
+    //   [SHANHAI-SELFLOOP] 铒粉  shanhai:deconstruct/gtceu_erbium_dust   1x gtceu:erbium_dust -> 1x gtceu:erbium_dust
+    //   [SHANHAI-SELFLOOP] 铕粉  shanhai:deconstruct/gtceu_europium_dust   1x gtceu:europium_dust -> 1x gtceu:europium_dust
+    //   [SHANHAI-SELFLOOP] 镄粉  shanhai:deconstruct/gtceu_fermium_dust   1x gtceu:fermium_dust -> 1x gtceu:fermium_dust
+    //   [SHANHAI-SELFLOOP] 钅夫粉  shanhai:deconstruct/gtceu_flerovium_dust   1x gtceu:flerovium_dust -> 1x gtceu:flerovium_dust
+    //   [SHANHAI-SELFLOOP] 钫粉  shanhai:deconstruct/gtceu_francium_dust   1x gtceu:francium_dust -> 1x gtceu:francium_dust
+    //   [SHANHAI-SELFLOOP] 钆粉  shanhai:deconstruct/gtceu_gadolinium_dust   1x gtceu:gadolinium_dust -> 1x gtceu:gadolinium_dust
+    //   [SHANHAI-SELFLOOP] 镓粉  shanhai:deconstruct/gtceu_gallium_dust   1x gtceu:gallium_dust -> 1x gtceu:gallium_dust
+    //   [SHANHAI-SELFLOOP] 锗粉  shanhai:deconstruct/gtceu_germanium_dust   1x gtceu:germanium_dust -> 1x gtceu:germanium_dust
+    //   [SHANHAI-SELFLOOP] 金粉  shanhai:deconstruct/gtceu_gold_dust   1x gtceu:gold_dust -> 1x gtceu:gold_dust
+    //   [SHANHAI-SELFLOOP] 铪粉  shanhai:deconstruct/gtceu_hafnium_dust   1x gtceu:hafnium_dust -> 1x gtceu:hafnium_dust
+    //   [SHANHAI-SELFLOOP] 钅黑粉  shanhai:deconstruct/gtceu_hassium_dust   1x gtceu:hassium_dust -> 1x gtceu:hassium_dust
+    //   [SHANHAI-SELFLOOP] 钬粉  shanhai:deconstruct/gtceu_holmium_dust   1x gtceu:holmium_dust -> 1x gtceu:holmium_dust
+    //   [SHANHAI-SELFLOOP] 铟粉  shanhai:deconstruct/gtceu_indium_dust   1x gtceu:indium_dust -> 1x gtceu:indium_dust
+    //   [SHANHAI-SELFLOOP] 碘粉  shanhai:deconstruct/gtceu_iodine_dust   1x gtceu:iodine_dust -> 1x gtceu:iodine_dust
+    //   [SHANHAI-SELFLOOP] 铱粉  shanhai:deconstruct/gtceu_iridium_dust   1x gtceu:iridium_dust -> 1x gtceu:iridium_dust
+    //   [SHANHAI-SELFLOOP] 铁粉  shanhai:deconstruct/gtceu_iron_dust   1x gtceu:iron_dust -> 1x gtceu:iron_dust
+    //   [SHANHAI-SELFLOOP] 镧粉  shanhai:deconstruct/gtceu_lanthanum_dust   1x gtceu:lanthanum_dust -> 1x gtceu:lanthanum_dust
+    //   [SHANHAI-SELFLOOP] 铹粉  shanhai:deconstruct/gtceu_lawrencium_dust   1x gtceu:lawrencium_dust -> 1x gtceu:lawrencium_dust
+    //   [SHANHAI-SELFLOOP] 铅粉  shanhai:deconstruct/gtceu_lead_dust   1x gtceu:lead_dust -> 1x gtceu:lead_dust
+    //   [SHANHAI-SELFLOOP] 锂粉  shanhai:deconstruct/gtceu_lithium_dust   1x gtceu:lithium_dust -> 1x gtceu:lithium_dust
+    //   [SHANHAI-SELFLOOP] 钅立粉  shanhai:deconstruct/gtceu_livermorium_dust   1x gtceu:livermorium_dust -> 1x gtceu:livermorium_dust
+    //   [SHANHAI-SELFLOOP] 镥粉  shanhai:deconstruct/gtceu_lutetium_dust   1x gtceu:lutetium_dust -> 1x gtceu:lutetium_dust
+    //   [SHANHAI-SELFLOOP] 镁粉  shanhai:deconstruct/gtceu_magnesium_dust   1x gtceu:magnesium_dust -> 1x gtceu:magnesium_dust
+    //   [SHANHAI-SELFLOOP] 钔粉  shanhai:deconstruct/gtceu_mendelevium_dust   1x gtceu:mendelevium_dust -> 1x gtceu:mendelevium_dust
+    //   [SHANHAI-SELFLOOP] 锰粉  shanhai:deconstruct/gtceu_manganese_dust   1x gtceu:manganese_dust -> 1x gtceu:manganese_dust
+    //   [SHANHAI-SELFLOOP] 钅麦粉  shanhai:deconstruct/gtceu_meitnerium_dust   1x gtceu:meitnerium_dust -> 1x gtceu:meitnerium_dust
+    //   [SHANHAI-SELFLOOP] 钼粉  shanhai:deconstruct/gtceu_molybdenum_dust   1x gtceu:molybdenum_dust -> 1x gtceu:molybdenum_dust
+    //   [SHANHAI-SELFLOOP] 镆粉  shanhai:deconstruct/gtceu_moscovium_dust   1x gtceu:moscovium_dust -> 1x gtceu:moscovium_dust
+    //   [SHANHAI-SELFLOOP] 钕粉  shanhai:deconstruct/gtceu_neodymium_dust   1x gtceu:neodymium_dust -> 1x gtceu:neodymium_dust
+    //   [SHANHAI-SELFLOOP] 镎粉  shanhai:deconstruct/gtceu_neptunium_dust   1x gtceu:neptunium_dust -> 1x gtceu:neptunium_dust
+    //   [SHANHAI-SELFLOOP] 镍粉  shanhai:deconstruct/gtceu_nickel_dust   1x gtceu:nickel_dust -> 1x gtceu:nickel_dust
+    //   [SHANHAI-SELFLOOP] 钅尔粉  shanhai:deconstruct/gtceu_nihonium_dust   1x gtceu:nihonium_dust -> 1x gtceu:nihonium_dust
+    //   [SHANHAI-SELFLOOP] 铌粉  shanhai:deconstruct/gtceu_niobium_dust   1x gtceu:niobium_dust -> 1x gtceu:niobium_dust
+    //   [SHANHAI-SELFLOOP] 锘粉  shanhai:deconstruct/gtceu_nobelium_dust   1x gtceu:nobelium_dust -> 1x gtceu:nobelium_dust
+    //   [SHANHAI-SELFLOOP] 气奥粉  shanhai:deconstruct/gtceu_oganesson_dust   1x gtceu:oganesson_dust -> 1x gtceu:oganesson_dust
+    //   [SHANHAI-SELFLOOP] 锇粉  shanhai:deconstruct/gtceu_osmium_dust   1x gtceu:osmium_dust -> 1x gtceu:osmium_dust
+    //   [SHANHAI-SELFLOOP] 钯粉  shanhai:deconstruct/gtceu_palladium_dust   1x gtceu:palladium_dust -> 1x gtceu:palladium_dust
+    //   [SHANHAI-SELFLOOP] 磷粉  shanhai:deconstruct/gtceu_phosphorus_dust   1x gtceu:phosphorus_dust -> 1x gtceu:phosphorus_dust
+    //   [SHANHAI-SELFLOOP] 钋粉  shanhai:deconstruct/gtceu_polonium_dust   1x gtceu:polonium_dust -> 1x gtceu:polonium_dust
+    //   [SHANHAI-SELFLOOP] 铂粉  shanhai:deconstruct/gtceu_platinum_dust   1x gtceu:platinum_dust -> 1x gtceu:platinum_dust
+    //   [SHANHAI-SELFLOOP] 钚粉  shanhai:deconstruct/gtceu_plutonium_dust   1x gtceu:plutonium_dust -> 1x gtceu:plutonium_dust
+    //   [SHANHAI-SELFLOOP] 钾粉  shanhai:deconstruct/gtceu_potassium_dust   1x gtceu:potassium_dust -> 1x gtceu:potassium_dust
+    //   [SHANHAI-SELFLOOP] 镨粉  shanhai:deconstruct/gtceu_praseodymium_dust   1x gtceu:praseodymium_dust -> 1x gtceu:praseodymium_dust
+    //   [SHANHAI-SELFLOOP] 钷粉  shanhai:deconstruct/gtceu_promethium_dust   1x gtceu:promethium_dust -> 1x gtceu:promethium_dust
+    //   [SHANHAI-SELFLOOP] 镤粉  shanhai:deconstruct/gtceu_protactinium_dust   1x gtceu:protactinium_dust -> 1x gtceu:protactinium_dust
+    //   [SHANHAI-SELFLOOP] 镭粉  shanhai:deconstruct/gtceu_radium_dust   1x gtceu:radium_dust -> 1x gtceu:radium_dust
+    //   [SHANHAI-SELFLOOP] 铼粉  shanhai:deconstruct/gtceu_rhenium_dust   1x gtceu:rhenium_dust -> 1x gtceu:rhenium_dust
+    //   [SHANHAI-SELFLOOP] 铑粉  shanhai:deconstruct/gtceu_rhodium_dust   1x gtceu:rhodium_dust -> 1x gtceu:rhodium_dust
+    //   [SHANHAI-SELFLOOP] 钅仑粉  shanhai:deconstruct/gtceu_roentgenium_dust   1x gtceu:roentgenium_dust -> 1x gtceu:roentgenium_dust
+    //   [SHANHAI-SELFLOOP] 铷粉  shanhai:deconstruct/gtceu_rubidium_dust   1x gtceu:rubidium_dust -> 1x gtceu:rubidium_dust
+    //   [SHANHAI-SELFLOOP] 钌粉  shanhai:deconstruct/gtceu_ruthenium_dust   1x gtceu:ruthenium_dust -> 1x gtceu:ruthenium_dust
+    //   [SHANHAI-SELFLOOP] 钅卢粉  shanhai:deconstruct/gtceu_rutherfordium_dust   1x gtceu:rutherfordium_dust -> 1x gtceu:rutherfordium_dust
+    //   [SHANHAI-SELFLOOP] 钐粉  shanhai:deconstruct/gtceu_samarium_dust   1x gtceu:samarium_dust -> 1x gtceu:samarium_dust
+    //   [SHANHAI-SELFLOOP] 钪粉  shanhai:deconstruct/gtceu_scandium_dust   1x gtceu:scandium_dust -> 1x gtceu:scandium_dust
+    //   [SHANHAI-SELFLOOP] 钅喜粉  shanhai:deconstruct/gtceu_seaborgium_dust   1x gtceu:seaborgium_dust -> 1x gtceu:seaborgium_dust
+    //   [SHANHAI-SELFLOOP] 硒粉  shanhai:deconstruct/gtceu_selenium_dust   1x gtceu:selenium_dust -> 1x gtceu:selenium_dust
+    //   [SHANHAI-SELFLOOP] 硅粉  shanhai:deconstruct/gtceu_silicon_dust   1x gtceu:silicon_dust -> 1x gtceu:silicon_dust
+    //   [SHANHAI-SELFLOOP] 银粉  shanhai:deconstruct/gtceu_silver_dust   1x gtceu:silver_dust -> 1x gtceu:silver_dust
+    //   [SHANHAI-SELFLOOP] 钠粉  shanhai:deconstruct/gtceu_sodium_dust   1x gtceu:sodium_dust -> 1x gtceu:sodium_dust
+    //   [SHANHAI-SELFLOOP] 锶粉  shanhai:deconstruct/gtceu_strontium_dust   1x gtceu:strontium_dust -> 1x gtceu:strontium_dust
+    //   [SHANHAI-SELFLOOP] 硫粉  shanhai:deconstruct/gtceu_sulfur_dust   1x gtceu:sulfur_dust -> 1x gtceu:sulfur_dust
+    //   [SHANHAI-SELFLOOP] 钽粉  shanhai:deconstruct/gtceu_tantalum_dust   1x gtceu:tantalum_dust -> 1x gtceu:tantalum_dust
+    //   [SHANHAI-SELFLOOP] 锝粉  shanhai:deconstruct/gtceu_technetium_dust   1x gtceu:technetium_dust -> 1x gtceu:technetium_dust
+    //   [SHANHAI-SELFLOOP] 碲粉  shanhai:deconstruct/gtceu_tellurium_dust   1x gtceu:tellurium_dust -> 1x gtceu:tellurium_dust
+    //   [SHANHAI-SELFLOOP] 石田粉  shanhai:deconstruct/gtceu_tennessine_dust   1x gtceu:tennessine_dust -> 1x gtceu:tennessine_dust
+    //   [SHANHAI-SELFLOOP] 铽粉  shanhai:deconstruct/gtceu_terbium_dust   1x gtceu:terbium_dust -> 1x gtceu:terbium_dust
+    //   [SHANHAI-SELFLOOP] 钍粉  shanhai:deconstruct/gtceu_thorium_dust   1x gtceu:thorium_dust -> 1x gtceu:thorium_dust
+    //   [SHANHAI-SELFLOOP] 铊粉  shanhai:deconstruct/gtceu_thallium_dust   1x gtceu:thallium_dust -> 1x gtceu:thallium_dust
+    //   [SHANHAI-SELFLOOP] 铥粉  shanhai:deconstruct/gtceu_thulium_dust   1x gtceu:thulium_dust -> 1x gtceu:thulium_dust
+    //   [SHANHAI-SELFLOOP] 锡粉  shanhai:deconstruct/gtceu_tin_dust   1x gtceu:tin_dust -> 1x gtceu:tin_dust
+    //   [SHANHAI-SELFLOOP] 钛粉  shanhai:deconstruct/gtceu_titanium_dust   1x gtceu:titanium_dust -> 1x gtceu:titanium_dust
+    //   [SHANHAI-SELFLOOP] 钨粉  shanhai:deconstruct/gtceu_tungsten_dust   1x gtceu:tungsten_dust -> 1x gtceu:tungsten_dust
+    //   [SHANHAI-SELFLOOP] 铀粉  shanhai:deconstruct/gtceu_uranium_dust   1x gtceu:uranium_dust -> 1x gtceu:uranium_dust
+    //   [SHANHAI-SELFLOOP] 钒粉  shanhai:deconstruct/gtceu_vanadium_dust   1x gtceu:vanadium_dust -> 1x gtceu:vanadium_dust
+    //   [SHANHAI-SELFLOOP] 镱粉  shanhai:deconstruct/gtceu_ytterbium_dust   1x gtceu:ytterbium_dust -> 1x gtceu:ytterbium_dust
+    //   [SHANHAI-SELFLOOP] 钇粉  shanhai:deconstruct/gtceu_yttrium_dust   1x gtceu:yttrium_dust -> 1x gtceu:yttrium_dust
+    //   [SHANHAI-SELFLOOP] 锌粉  shanhai:deconstruct/gtceu_zinc_dust   1x gtceu:zinc_dust -> 1x gtceu:zinc_dust
+    //   [SHANHAI-SELFLOOP] 锆粉  shanhai:deconstruct/gtceu_zirconium_dust   1x gtceu:zirconium_dust -> 1x gtceu:zirconium_dust
+    //   [SHANHAI-SELFLOOP] 硅岩粉  shanhai:deconstruct/gtceu_naquadah_dust   1x gtceu:naquadah_dust -> 1x gtceu:naquadah_dust
+    //   [SHANHAI-SELFLOOP] 富集硅岩粉  shanhai:deconstruct/gtceu_enriched_naquadah_dust   1x gtceu:enriched_naquadah_dust -> 1x gtceu:enriched_naquadah_dust
+    //   [SHANHAI-SELFLOOP] 超能硅岩粉  shanhai:deconstruct/gtceu_naquadria_dust   1x gtceu:naquadria_dust -> 1x gtceu:naquadria_dust
+    //   [SHANHAI-SELFLOOP] 中子素粉  shanhai:deconstruct/gtceu_neutronium_dust   1x gtceu:neutronium_dust -> 1x gtceu:neutronium_dust
+    //   [SHANHAI-SELFLOOP] 三钛粉  shanhai:deconstruct/gtceu_tritanium_dust   1x gtceu:tritanium_dust -> 1x gtceu:tritanium_dust
+    //   [SHANHAI-SELFLOOP] 铿铀粉  shanhai:deconstruct/gtceu_duranium_dust   1x gtceu:duranium_dust -> 1x gtceu:duranium_dust
+    //   [SHANHAI-SELFLOOP] 凯金粉  shanhai:deconstruct/gtceu_trinium_dust   1x gtceu:trinium_dust -> 1x gtceu:trinium_dust
+    //   [SHANHAI-SELFLOOP] 退火铜粉  shanhai:deconstruct/gtceu_annealed_copper_dust   1x gtceu:annealed_copper_dust -> 1x gtceu:annealed_copper_dust
+    //   [SHANHAI-SELFLOOP] 灰烬粉  shanhai:deconstruct/gtceu_ash_dust   1x gtceu:ash_dust -> 1x gtceu:ash_dust
+    //   [SHANHAI-SELFLOOP] 木炭粉  shanhai:deconstruct/gtceu_charcoal_dust   1x gtceu:charcoal_dust -> 1x gtceu:charcoal_dust
+    //   [SHANHAI-SELFLOOP] 黑色灰烬粉  shanhai:deconstruct/gtceu_dark_ash_dust   1x gtceu:dark_ash_dust -> 1x gtceu:dark_ash_dust
+    //   [SHANHAI-SELFLOOP] 钻石粉  shanhai:deconstruct/gtceu_diamond_dust   1x gtceu:diamond_dust -> 1x gtceu:diamond_dust
+    //   [SHANHAI-SELFLOOP] 焦煤粉  shanhai:deconstruct/gtceu_coke_dust   1x gtceu:coke_dust -> 1x gtceu:coke_dust
+    //   [SHANHAI-SELFLOOP] 钢粉  shanhai:deconstruct/gtceu_steel_dust   1x gtceu:steel_dust -> 1x gtceu:steel_dust
+    //   [SHANHAI-SELFLOOP] 锻铁粉  shanhai:deconstruct/gtceu_wrought_iron_dust   1x gtceu:wrought_iron_dust -> 1x gtceu:wrought_iron_dust
+    //   [SHANHAI-SELFLOOP] 石墨烯粉  shanhai:deconstruct/gtceu_graphene_dust   1x gtceu:graphene_dust -> 1x gtceu:graphene_dust
+    //   [SHANHAI-SELFLOOP] 磁化铁粉  shanhai:deconstruct/gtceu_magnetic_iron_dust   1x gtceu:magnetic_iron_dust -> 1x gtceu:magnetic_iron_dust
+    //   [SHANHAI-SELFLOOP] 磁化钕粉  shanhai:deconstruct/gtceu_magnetic_neodymium_dust   1x gtceu:magnetic_neodymium_dust -> 1x gtceu:magnetic_neodymium_dust
+    //   [SHANHAI-SELFLOOP] 磁化钐粉  shanhai:deconstruct/gtceu_magnetic_samarium_dust   1x gtceu:magnetic_samarium_dust -> 1x gtceu:magnetic_samarium_dust
+    //   [SHANHAI-SELFLOOP] 活性炭粉  shanhai:deconstruct/gtceu_activated_carbon_dust   1x gtceu:activated_carbon_dust -> 1x gtceu:activated_carbon_dust
+    //   [SHANHAI-SELFLOOP] 大马士革钢粉  shanhai:deconstruct/gtceu_damascus_steel_dust   1x gtceu:damascus_steel_dust -> 1x gtceu:damascus_steel_dust
+    //   [SHANHAI-SELFLOOP] 磁化钢粉  shanhai:deconstruct/gtceu_magnetic_steel_dust   1x gtceu:magnetic_steel_dust -> 1x gtceu:magnetic_steel_dust
+    //   [SHANHAI-SELFLOOP] 注魔金粉  shanhai:deconstruct/gtceu_infused_gold_dust   1x gtceu:infused_gold_dust -> 1x gtceu:infused_gold_dust
+    //   [SHANHAI-SELFLOOP] 神秘粉  shanhai:deconstruct/gtceu_thaumium_dust   1x gtceu:thaumium_dust -> 1x gtceu:thaumium_dust
+    //   [SHANHAI-SELFLOOP] 脉冲铁粉  shanhai:deconstruct/gtceu_pulsating_alloy_dust   1x gtceu:pulsating_alloy_dust -> 1x gtceu:pulsating_alloy_dust
+    //   [SHANHAI-SELFLOOP] 艾德曼合金粉  shanhai:deconstruct/gtceu_adamantium_dust   1x gtceu:adamantium_dust -> 1x gtceu:adamantium_dust
+    //   [SHANHAI-SELFLOOP] 量子粉  shanhai:deconstruct/gtceu_quantanium_dust   1x gtceu:quantanium_dust -> 1x gtceu:quantanium_dust
+    //   [SHANHAI-SELFLOOP] 振金粉  shanhai:deconstruct/gtceu_vibranium_dust   1x gtceu:vibranium_dust -> 1x gtceu:vibranium_dust
+    //   [SHANHAI-SELFLOOP] 龙粉  shanhai:deconstruct/gtceu_draconium_dust   1x gtceu:draconium_dust -> 1x gtceu:draconium_dust
+    //   [SHANHAI-SELFLOOP] 混沌物质粉  shanhai:deconstruct/gtceu_chaos_dust   1x gtceu:chaos_dust -> 1x gtceu:chaos_dust
+    //   [SHANHAI-SELFLOOP] 海珀珍粉  shanhai:deconstruct/gtceu_hypogen_dust   1x gtceu:hypogen_dust -> 1x gtceu:hypogen_dust
+    //   [SHANHAI-SELFLOOP] 调律源金粉  shanhai:deconstruct/gtceu_shirabon_dust   1x gtceu:shirabon_dust -> 1x gtceu:shirabon_dust
+    //   [SHANHAI-SELFLOOP] 秘银粉  shanhai:deconstruct/gtceu_mithril_dust   1x gtceu:mithril_dust -> 1x gtceu:mithril_dust
+    //   [SHANHAI-SELFLOOP] 塔兰粉  shanhai:deconstruct/gtceu_taranium_dust   1x gtceu:taranium_dust -> 1x gtceu:taranium_dust
+    //   [SHANHAI-SELFLOOP] 水晶矩阵粉  shanhai:deconstruct/gtceu_crystalmatrix_dust   1x gtceu:crystalmatrix_dust -> 1x gtceu:crystalmatrix_dust
+    //   [SHANHAI-SELFLOOP] 宇宙中子素粉  shanhai:deconstruct/gtceu_cosmicneutronium_dust   1x gtceu:cosmicneutronium_dust -> 1x gtceu:cosmicneutronium_dust
+    //   [SHANHAI-SELFLOOP] 回响合金粉  shanhai:deconstruct/gtceu_echoite_dust   1x gtceu:echoite_dust -> 1x gtceu:echoite_dust
+    //   [SHANHAI-SELFLOOP] 传奇合金粉  shanhai:deconstruct/gtceu_legendarium_dust   1x gtceu:legendarium_dust -> 1x gtceu:legendarium_dust
+    //   [SHANHAI-SELFLOOP] 觉醒龙粉  shanhai:deconstruct/gtceu_draconiumawakened_dust   1x gtceu:draconiumawakened_dust -> 1x gtceu:draconiumawakened_dust
+    //   [SHANHAI-SELFLOOP] 精金粉  shanhai:deconstruct/gtceu_adamantine_dust   1x gtceu:adamantine_dust -> 1x gtceu:adamantine_dust
+    //   [SHANHAI-SELFLOOP] 星辉粉  shanhai:deconstruct/gtceu_starmetal_dust   1x gtceu:starmetal_dust -> 1x gtceu:starmetal_dust
+    //   [SHANHAI-SELFLOOP] 山铜粉  shanhai:deconstruct/gtceu_orichalcum_dust   1x gtceu:orichalcum_dust -> 1x gtceu:orichalcum_dust
+    //   [SHANHAI-SELFLOOP] 魔金粉  shanhai:deconstruct/gtceu_infuscolium_dust   1x gtceu:infuscolium_dust -> 1x gtceu:infuscolium_dust
+    //   [SHANHAI-SELFLOOP] 末影粉  shanhai:deconstruct/gtceu_enderium_dust   1x gtceu:enderium_dust -> 1x gtceu:enderium_dust
+    //   [SHANHAI-SELFLOOP] 永恒粉  shanhai:deconstruct/gtceu_eternity_dust   1x gtceu:eternity_dust -> 1x gtceu:eternity_dust
+    //   [SHANHAI-SELFLOOP] 磁物质粉  shanhai:deconstruct/gtceu_magmatter_dust   1x gtceu:magmatter_dust -> 1x gtceu:magmatter_dust
+    //   [SHANHAI-SELFLOOP] 简并态铼粉  shanhai:deconstruct/gtceu_degenerate_rhenium_dust   1x gtceu:degenerate_rhenium_dust -> 1x gtceu:degenerate_rhenium_dust
+    //   [SHANHAI-SELFLOOP] 重夸克简并物质粉  shanhai:deconstruct/gtceu_heavy_quark_degenerate_matter_dust   1x gtceu:heavy_quark_degenerate_matter_dust -> 1x gtceu:heavy_quark_degenerate_matter_dust
+    //   [SHANHAI-SELFLOOP] 亚稳态鿫粉  shanhai:deconstruct/gtceu_metastable_oganesson_dust   1x gtceu:metastable_oganesson_dust -> 1x gtceu:metastable_oganesson_dust
+    //   [SHANHAI-SELFLOOP] 量子色动力学封闭物质粉  shanhai:deconstruct/gtceu_quantumchromodynamically_confined_matter_dust   1x gtceu:quantumchromodynamically_confined_matter_dust -> 1x gtceu:quantumchromodynamically_confined_matter_dust
+    //   [SHANHAI-SELFLOOP] 超时空金属粉  shanhai:deconstruct/gtceu_transcendentmetal_dust   1x gtceu:transcendentmetal_dust -> 1x gtceu:transcendentmetal_dust
+    //   [SHANHAI-SELFLOOP] 乌鲁粉  shanhai:deconstruct/gtceu_uruium_dust   1x gtceu:uruium_dust -> 1x gtceu:uruium_dust
+    //   [SHANHAI-SELFLOOP] 磁流体约束恒星物质粉  shanhai:deconstruct/gtceu_magnetohydrodynamicallyconstrainedstarmatter_dust   1x gtceu:magnetohydrodynamicallyconstrainedstarmatter_dust -> 1x gtceu:magnetohydrodynamicallyconstrainedstarmatter_dust
+    //   [SHANHAI-SELFLOOP] 白矮星物质粉  shanhai:deconstruct/gtceu_white_dwarf_mtter_dust   1x gtceu:white_dwarf_mtter_dust -> 1x gtceu:white_dwarf_mtter_dust
+    //   [SHANHAI-SELFLOOP] 黑矮星物质粉  shanhai:deconstruct/gtceu_black_dwarf_mtter_dust   1x gtceu:black_dwarf_mtter_dust -> 1x gtceu:black_dwarf_mtter_dust
+    //   [SHANHAI-SELFLOOP] 星体钛粉  shanhai:deconstruct/gtceu_astraltitanium_dust   1x gtceu:astraltitanium_dust -> 1x gtceu:astraltitanium_dust
+    //   [SHANHAI-SELFLOOP] 天体钨粉  shanhai:deconstruct/gtceu_celestialtungsten_dust   1x gtceu:celestialtungsten_dust -> 1x gtceu:celestialtungsten_dust
+    //   [SHANHAI-SELFLOOP] 纯镃粉  shanhai:deconstruct/gtceu_purified_tengam_dust   1x gtceu:purified_tengam_dust -> 1x gtceu:purified_tengam_dust
+    //   [SHANHAI-SELFLOOP] 谐镃粉  shanhai:deconstruct/gtceu_attuned_tengam_dust   1x gtceu:attuned_tengam_dust -> 1x gtceu:attuned_tengam_dust
+    //   [SHANHAI-SELFLOOP] 含锗沉淀物粉  shanhai:deconstruct/gtceu_germanium_containing_precipitate_dust   1x gtceu:germanium_containing_precipitate_dust -> 1x gtceu:germanium_containing_precipitate_dust
+    //   [SHANHAI-SELFLOOP] 锗灰粉  shanhai:deconstruct/gtceu_germanium_ash_dust   1x gtceu:germanium_ash_dust -> 1x gtceu:germanium_ash_dust
+    //   [SHANHAI-SELFLOOP] 钛-50粉  shanhai:deconstruct/gtceu_titanium_50_dust   1x gtceu:titanium_50_dust -> 1x gtceu:titanium_50_dust
+    //   [SHANHAI-SELFLOOP] 石墨烯浆料粉  shanhai:deconstruct/gtceu_graphene_gel_suspension_dust   1x gtceu:graphene_gel_suspension_dust -> 1x gtceu:graphene_gel_suspension_dust
+    //   [SHANHAI-SELFLOOP] 干石墨烯凝胶粉  shanhai:deconstruct/gtceu_dry_graphene_gel_dust   1x gtceu:dry_graphene_gel_dust -> 1x gtceu:dry_graphene_gel_dust
+    //   [SHANHAI-SELFLOOP] 铜-76粉  shanhai:deconstruct/gtceu_copper76_dust   1x gtceu:copper76_dust -> 1x gtceu:copper76_dust
+    //   [SHANHAI-SELFLOOP] 时空粉  shanhai:deconstruct/gtceu_spacetime_dust   1x gtceu:spacetime_dust -> 1x gtceu:spacetime_dust
+    //   [SHANHAI-SELFLOOP] 无尽粉  shanhai:deconstruct/gtceu_infinity_dust   1x gtceu:infinity_dust -> 1x gtceu:infinity_dust
+    //   [SHANHAI-SELFLOOP] 脱磷钐精粉  shanhai:deconstruct/gtceu_phosphorus_free_samarium_concentrate_powder_dust   1x gtceu:phosphorus_free_samarium_concentrate_powder_dust -> 1x gtceu:phosphorus_free_samarium_concentrate_powder_dust
+    //   [SHANHAI-SELFLOOP] tear粉  shanhai:deconstruct/gtceu_tear_dust   1x gtceu:tear_dust -> 1x gtceu:tear_dust
+    //   [SHANHAI-SELFLOOP] instability粉  shanhai:deconstruct/gtceu_instability_dust   1x gtceu:instability_dust -> 1x gtceu:instability_dust
+    //   [SHANHAI-SELFLOOP] celestial_secret粉  shanhai:deconstruct/gtceu_celestial_secret_dust   1x gtceu:celestial_secret_dust -> 1x gtceu:celestial_secret_dust
+    //   [SHANHAI-SELFLOOP] creon粉  shanhai:deconstruct/gtladditions_creon_dust   1x gtladditions:creon_dust -> 1x gtladditions:creon_dust
+    //   [SHANHAI-SELFLOOP-KEEP] 流体→自己粉 保留 141 条（上面那批的反面对照）
+    //   ⚠️ 判据【判在覆盖表 OV 之后】：有 2 条原始产出像自环、但被覆盖表改成了真配方（煤炭：1x gtceu:coal_dust -> 1x gtceu:coal_dust ⇒ 覆盖后 1x gtceu:coal_dust -> 2x gtceu:carbon_dust；石墨：1x gtceu:graphite_dust -> 1x gtceu:graphite_dust ⇒ 覆盖后 1x gtceu:graphite_dust -> 4x gtceu:carbon_dust）
     var JOBS = [
         {
-            id: 'shanhai:deconstruct/gtceu_actinium_dust', inItem: '1x gtceu:actinium_dust', inFluid: null,
-            outItems: ['1x gtceu:actinium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_actinium_fluid', inItem: null, inFluid: 'gtceu:actinium 1000',
             outItems: ['1x gtceu:actinium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_aluminium_dust', inItem: '1x gtceu:aluminium_dust', inFluid: null,
-            outItems: ['1x gtceu:aluminium_dust'],
             outFluids: []
         }
         ,{
@@ -43,18 +224,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_americium_dust', inItem: '1x gtceu:americium_dust', inFluid: null,
-            outItems: ['1x gtceu:americium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_americium_fluid', inItem: null, inFluid: 'gtceu:americium 1000',
             outItems: ['1x gtceu:americium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_antimony_dust', inItem: '1x gtceu:antimony_dust', inFluid: null,
-            outItems: ['1x gtceu:antimony_dust'],
             outFluids: []
         }
         ,{
@@ -68,18 +239,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:argon 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_arsenic_dust', inItem: '1x gtceu:arsenic_dust', inFluid: null,
-            outItems: ['1x gtceu:arsenic_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_arsenic_fluid', inItem: null, inFluid: 'gtceu:arsenic 1000',
             outItems: ['1x gtceu:arsenic_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_astatine_dust', inItem: '1x gtceu:astatine_dust', inFluid: null,
-            outItems: ['1x gtceu:astatine_dust'],
             outFluids: []
         }
         ,{
@@ -88,23 +249,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_barium_dust', inItem: '1x gtceu:barium_dust', inFluid: null,
-            outItems: ['1x gtceu:barium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_berkelium_dust', inItem: '1x gtceu:berkelium_dust', inFluid: null,
-            outItems: ['1x gtceu:berkelium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_berkelium_fluid', inItem: null, inFluid: 'gtceu:berkelium 1000',
             outItems: ['1x gtceu:berkelium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_beryllium_dust', inItem: '1x gtceu:beryllium_dust', inFluid: null,
-            outItems: ['1x gtceu:beryllium_dust'],
             outFluids: []
         }
         ,{
@@ -113,18 +259,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_bismuth_dust', inItem: '1x gtceu:bismuth_dust', inFluid: null,
-            outItems: ['1x gtceu:bismuth_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_bismuth_fluid', inItem: null, inFluid: 'gtceu:bismuth 1000',
             outItems: ['1x gtceu:bismuth_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_bohrium_dust', inItem: '1x gtceu:bohrium_dust', inFluid: null,
-            outItems: ['1x gtceu:bohrium_dust'],
             outFluids: []
         }
         ,{
@@ -133,33 +269,13 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_boron_dust', inItem: '1x gtceu:boron_dust', inFluid: null,
-            outItems: ['1x gtceu:boron_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_bromine_fluid', inItem: null, inFluid: 'gtceu:bromine 1000',
             outItems: [],
             outFluids: ['gtceu:bromine 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_caesium_dust', inItem: '1x gtceu:caesium_dust', inFluid: null,
-            outItems: ['1x gtceu:caesium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_calcium_dust', inItem: '1x gtceu:calcium_dust', inFluid: null,
-            outItems: ['1x gtceu:calcium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_calcium_fluid', inItem: null, inFluid: 'gtceu:calcium 1000',
             outItems: ['1x gtceu:calcium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_californium_dust', inItem: '1x gtceu:californium_dust', inFluid: null,
-            outItems: ['1x gtceu:californium_dust'],
             outFluids: []
         }
         ,{
@@ -168,23 +284,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_carbon_dust', inItem: '1x gtceu:carbon_dust', inFluid: null,
-            outItems: ['1x gtceu:carbon_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_carbon_fluid', inItem: null, inFluid: 'gtceu:carbon 1000',
             outItems: ['1x gtceu:carbon_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_cadmium_dust', inItem: '1x gtceu:cadmium_dust', inFluid: null,
-            outItems: ['1x gtceu:cadmium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_cerium_dust', inItem: '1x gtceu:cerium_dust', inFluid: null,
-            outItems: ['1x gtceu:cerium_dust'],
             outFluids: []
         }
         ,{
@@ -198,18 +299,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:chlorine 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_chromium_dust', inItem: '1x gtceu:chromium_dust', inFluid: null,
-            outItems: ['1x gtceu:chromium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_chromium_fluid', inItem: null, inFluid: 'gtceu:chromium 1000',
             outItems: ['1x gtceu:chromium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_cobalt_dust', inItem: '1x gtceu:cobalt_dust', inFluid: null,
-            outItems: ['1x gtceu:cobalt_dust'],
             outFluids: []
         }
         ,{
@@ -218,18 +309,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_copernicium_dust', inItem: '1x gtceu:copernicium_dust', inFluid: null,
-            outItems: ['1x gtceu:copernicium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_copernicium_fluid', inItem: null, inFluid: 'gtceu:copernicium 1000',
             outItems: ['1x gtceu:copernicium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_copper_dust', inItem: '1x gtceu:copper_dust', inFluid: null,
-            outItems: ['1x gtceu:copper_dust'],
             outFluids: []
         }
         ,{
@@ -238,18 +319,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_curium_dust', inItem: '1x gtceu:curium_dust', inFluid: null,
-            outItems: ['1x gtceu:curium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_curium_fluid', inItem: null, inFluid: 'gtceu:curium 1000',
             outItems: ['1x gtceu:curium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_darmstadtium_dust', inItem: '1x gtceu:darmstadtium_dust', inFluid: null,
-            outItems: ['1x gtceu:darmstadtium_dust'],
             outFluids: []
         }
         ,{
@@ -263,18 +334,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:deuterium 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_dubnium_dust', inItem: '1x gtceu:dubnium_dust', inFluid: null,
-            outItems: ['1x gtceu:dubnium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_dubnium_fluid', inItem: null, inFluid: 'gtceu:dubnium 1000',
             outItems: ['1x gtceu:dubnium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_dysprosium_dust', inItem: '1x gtceu:dysprosium_dust', inFluid: null,
-            outItems: ['1x gtceu:dysprosium_dust'],
             outFluids: []
         }
         ,{
@@ -283,18 +344,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_einsteinium_dust', inItem: '1x gtceu:einsteinium_dust', inFluid: null,
-            outItems: ['1x gtceu:einsteinium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_einsteinium_fluid', inItem: null, inFluid: 'gtceu:einsteinium 1000',
             outItems: ['1x gtceu:einsteinium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_erbium_dust', inItem: '1x gtceu:erbium_dust', inFluid: null,
-            outItems: ['1x gtceu:erbium_dust'],
             outFluids: []
         }
         ,{
@@ -303,28 +354,13 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_europium_dust', inItem: '1x gtceu:europium_dust', inFluid: null,
-            outItems: ['1x gtceu:europium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_europium_fluid', inItem: null, inFluid: 'gtceu:europium 1000',
             outItems: ['1x gtceu:europium_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_fermium_dust', inItem: '1x gtceu:fermium_dust', inFluid: null,
-            outItems: ['1x gtceu:fermium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_fermium_fluid', inItem: null, inFluid: 'gtceu:fermium 1000',
             outItems: ['1x gtceu:fermium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_flerovium_dust', inItem: '1x gtceu:flerovium_dust', inFluid: null,
-            outItems: ['1x gtceu:flerovium_dust'],
             outFluids: []
         }
         ,{
@@ -338,23 +374,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:fluorine 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_francium_dust', inItem: '1x gtceu:francium_dust', inFluid: null,
-            outItems: ['1x gtceu:francium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_gadolinium_dust', inItem: '1x gtceu:gadolinium_dust', inFluid: null,
-            outItems: ['1x gtceu:gadolinium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_gadolinium_fluid', inItem: null, inFluid: 'gtceu:gadolinium 1000',
             outItems: ['1x gtceu:gadolinium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_gallium_dust', inItem: '1x gtceu:gallium_dust', inFluid: null,
-            outItems: ['1x gtceu:gallium_dust'],
             outFluids: []
         }
         ,{
@@ -363,18 +384,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_germanium_dust', inItem: '1x gtceu:germanium_dust', inFluid: null,
-            outItems: ['1x gtceu:germanium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_germanium_fluid', inItem: null, inFluid: 'gtceu:germanium 1000',
             outItems: ['1x gtceu:germanium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_gold_dust', inItem: '1x gtceu:gold_dust', inFluid: null,
-            outItems: ['1x gtceu:gold_dust'],
             outFluids: []
         }
         ,{
@@ -383,28 +394,13 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_hafnium_dust', inItem: '1x gtceu:hafnium_dust', inFluid: null,
-            outItems: ['1x gtceu:hafnium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_hafnium_fluid', inItem: null, inFluid: 'gtceu:hafnium 1000',
             outItems: ['1x gtceu:hafnium_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_hassium_dust', inItem: '1x gtceu:hassium_dust', inFluid: null,
-            outItems: ['1x gtceu:hassium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_hassium_fluid', inItem: null, inFluid: 'gtceu:hassium 1000',
             outItems: ['1x gtceu:hassium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_holmium_dust', inItem: '1x gtceu:holmium_dust', inFluid: null,
-            outItems: ['1x gtceu:holmium_dust'],
             outFluids: []
         }
         ,{
@@ -428,33 +424,13 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:helium 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_indium_dust', inItem: '1x gtceu:indium_dust', inFluid: null,
-            outItems: ['1x gtceu:indium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_indium_fluid', inItem: null, inFluid: 'gtceu:indium 1000',
             outItems: ['1x gtceu:indium_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_iodine_dust', inItem: '1x gtceu:iodine_dust', inFluid: null,
-            outItems: ['1x gtceu:iodine_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_iridium_dust', inItem: '1x gtceu:iridium_dust', inFluid: null,
-            outItems: ['1x gtceu:iridium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_iridium_fluid', inItem: null, inFluid: 'gtceu:iridium 1000',
             outItems: ['1x gtceu:iridium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_iron_dust', inItem: '1x gtceu:iron_dust', inFluid: null,
-            outItems: ['1x gtceu:iron_dust'],
             outFluids: []
         }
         ,{
@@ -468,18 +444,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:krypton 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_lanthanum_dust', inItem: '1x gtceu:lanthanum_dust', inFluid: null,
-            outItems: ['1x gtceu:lanthanum_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_lanthanum_fluid', inItem: null, inFluid: 'gtceu:lanthanum 1000',
             outItems: ['1x gtceu:lanthanum_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_lawrencium_dust', inItem: '1x gtceu:lawrencium_dust', inFluid: null,
-            outItems: ['1x gtceu:lawrencium_dust'],
             outFluids: []
         }
         ,{
@@ -488,18 +454,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_lead_dust', inItem: '1x gtceu:lead_dust', inFluid: null,
-            outItems: ['1x gtceu:lead_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_lead_fluid', inItem: null, inFluid: 'gtceu:lead 1000',
             outItems: ['1x gtceu:lead_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_lithium_dust', inItem: '1x gtceu:lithium_dust', inFluid: null,
-            outItems: ['1x gtceu:lithium_dust'],
             outFluids: []
         }
         ,{
@@ -508,18 +464,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_livermorium_dust', inItem: '1x gtceu:livermorium_dust', inFluid: null,
-            outItems: ['1x gtceu:livermorium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_livermorium_fluid', inItem: null, inFluid: 'gtceu:livermorium 1000',
             outItems: ['1x gtceu:livermorium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_lutetium_dust', inItem: '1x gtceu:lutetium_dust', inFluid: null,
-            outItems: ['1x gtceu:lutetium_dust'],
             outFluids: []
         }
         ,{
@@ -528,18 +474,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_magnesium_dust', inItem: '1x gtceu:magnesium_dust', inFluid: null,
-            outItems: ['1x gtceu:magnesium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_magnesium_fluid', inItem: null, inFluid: 'gtceu:magnesium 1000',
             outItems: ['1x gtceu:magnesium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_mendelevium_dust', inItem: '1x gtceu:mendelevium_dust', inFluid: null,
-            outItems: ['1x gtceu:mendelevium_dust'],
             outFluids: []
         }
         ,{
@@ -548,18 +484,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_manganese_dust', inItem: '1x gtceu:manganese_dust', inFluid: null,
-            outItems: ['1x gtceu:manganese_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_manganese_fluid', inItem: null, inFluid: 'gtceu:manganese 1000',
             outItems: ['1x gtceu:manganese_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_meitnerium_dust', inItem: '1x gtceu:meitnerium_dust', inFluid: null,
-            outItems: ['1x gtceu:meitnerium_dust'],
             outFluids: []
         }
         ,{
@@ -573,28 +499,13 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:mercury 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_molybdenum_dust', inItem: '1x gtceu:molybdenum_dust', inFluid: null,
-            outItems: ['1x gtceu:molybdenum_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_molybdenum_fluid', inItem: null, inFluid: 'gtceu:molybdenum 1000',
             outItems: ['1x gtceu:molybdenum_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_moscovium_dust', inItem: '1x gtceu:moscovium_dust', inFluid: null,
-            outItems: ['1x gtceu:moscovium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_moscovium_fluid', inItem: null, inFluid: 'gtceu:moscovium 1000',
             outItems: ['1x gtceu:moscovium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_neodymium_dust', inItem: '1x gtceu:neodymium_dust', inFluid: null,
-            outItems: ['1x gtceu:neodymium_dust'],
             outFluids: []
         }
         ,{
@@ -608,18 +519,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:neon 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_neptunium_dust', inItem: '1x gtceu:neptunium_dust', inFluid: null,
-            outItems: ['1x gtceu:neptunium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_neptunium_fluid', inItem: null, inFluid: 'gtceu:neptunium 1000',
             outItems: ['1x gtceu:neptunium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_nickel_dust', inItem: '1x gtceu:nickel_dust', inFluid: null,
-            outItems: ['1x gtceu:nickel_dust'],
             outFluids: []
         }
         ,{
@@ -628,18 +529,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_nihonium_dust', inItem: '1x gtceu:nihonium_dust', inFluid: null,
-            outItems: ['1x gtceu:nihonium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_nihonium_fluid', inItem: null, inFluid: 'gtceu:nihonium 1000',
             outItems: ['1x gtceu:nihonium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_niobium_dust', inItem: '1x gtceu:niobium_dust', inFluid: null,
-            outItems: ['1x gtceu:niobium_dust'],
             outFluids: []
         }
         ,{
@@ -653,28 +544,13 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:nitrogen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_nobelium_dust', inItem: '1x gtceu:nobelium_dust', inFluid: null,
-            outItems: ['1x gtceu:nobelium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_nobelium_fluid', inItem: null, inFluid: 'gtceu:nobelium 1000',
             outItems: ['1x gtceu:nobelium_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_oganesson_dust', inItem: '1x gtceu:oganesson_dust', inFluid: null,
-            outItems: ['1x gtceu:oganesson_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_oganesson_fluid', inItem: null, inFluid: 'gtceu:oganesson 1000',
             outItems: ['1x gtceu:oganesson_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_osmium_dust', inItem: '1x gtceu:osmium_dust', inFluid: null,
-            outItems: ['1x gtceu:osmium_dust'],
             outFluids: []
         }
         ,{
@@ -688,18 +564,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_palladium_dust', inItem: '1x gtceu:palladium_dust', inFluid: null,
-            outItems: ['1x gtceu:palladium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_palladium_fluid', inItem: null, inFluid: 'gtceu:palladium 1000',
             outItems: ['1x gtceu:palladium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_phosphorus_dust', inItem: '1x gtceu:phosphorus_dust', inFluid: null,
-            outItems: ['1x gtceu:phosphorus_dust'],
             outFluids: []
         }
         ,{
@@ -708,28 +574,13 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_polonium_dust', inItem: '1x gtceu:polonium_dust', inFluid: null,
-            outItems: ['1x gtceu:polonium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_polonium_fluid', inItem: null, inFluid: 'gtceu:polonium 1000',
             outItems: ['1x gtceu:polonium_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_platinum_dust', inItem: '1x gtceu:platinum_dust', inFluid: null,
-            outItems: ['1x gtceu:platinum_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_platinum_fluid', inItem: null, inFluid: 'gtceu:platinum 1000',
             outItems: ['1x gtceu:platinum_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_plutonium_dust', inItem: '1x gtceu:plutonium_dust', inFluid: null,
-            outItems: ['1x gtceu:plutonium_dust'],
             outFluids: []
         }
         ,{
@@ -748,18 +599,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_potassium_dust', inItem: '1x gtceu:potassium_dust', inFluid: null,
-            outItems: ['1x gtceu:potassium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_potassium_fluid', inItem: null, inFluid: 'gtceu:potassium 1000',
             outItems: ['1x gtceu:potassium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_praseodymium_dust', inItem: '1x gtceu:praseodymium_dust', inFluid: null,
-            outItems: ['1x gtceu:praseodymium_dust'],
             outFluids: []
         }
         ,{
@@ -768,18 +609,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_promethium_dust', inItem: '1x gtceu:promethium_dust', inFluid: null,
-            outItems: ['1x gtceu:promethium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_promethium_fluid', inItem: null, inFluid: 'gtceu:promethium 1000',
             outItems: ['1x gtceu:promethium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_protactinium_dust', inItem: '1x gtceu:protactinium_dust', inFluid: null,
-            outItems: ['1x gtceu:protactinium_dust'],
             outFluids: []
         }
         ,{
@@ -793,18 +624,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:radon 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_radium_dust', inItem: '1x gtceu:radium_dust', inFluid: null,
-            outItems: ['1x gtceu:radium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_radium_fluid', inItem: null, inFluid: 'gtceu:radium 1000',
             outItems: ['1x gtceu:radium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_rhenium_dust', inItem: '1x gtceu:rhenium_dust', inFluid: null,
-            outItems: ['1x gtceu:rhenium_dust'],
             outFluids: []
         }
         ,{
@@ -813,18 +634,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_rhodium_dust', inItem: '1x gtceu:rhodium_dust', inFluid: null,
-            outItems: ['1x gtceu:rhodium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_rhodium_fluid', inItem: null, inFluid: 'gtceu:rhodium 1000',
             outItems: ['1x gtceu:rhodium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_roentgenium_dust', inItem: '1x gtceu:roentgenium_dust', inFluid: null,
-            outItems: ['1x gtceu:roentgenium_dust'],
             outFluids: []
         }
         ,{
@@ -833,18 +644,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_rubidium_dust', inItem: '1x gtceu:rubidium_dust', inFluid: null,
-            outItems: ['1x gtceu:rubidium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_rubidium_fluid', inItem: null, inFluid: 'gtceu:rubidium 1000',
             outItems: ['1x gtceu:rubidium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_ruthenium_dust', inItem: '1x gtceu:ruthenium_dust', inFluid: null,
-            outItems: ['1x gtceu:ruthenium_dust'],
             outFluids: []
         }
         ,{
@@ -853,23 +654,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_rutherfordium_dust', inItem: '1x gtceu:rutherfordium_dust', inFluid: null,
-            outItems: ['1x gtceu:rutherfordium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_samarium_dust', inItem: '1x gtceu:samarium_dust', inFluid: null,
-            outItems: ['1x gtceu:samarium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_samarium_fluid', inItem: null, inFluid: 'gtceu:samarium 1000',
             outItems: ['1x gtceu:samarium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_scandium_dust', inItem: '1x gtceu:scandium_dust', inFluid: null,
-            outItems: ['1x gtceu:scandium_dust'],
             outFluids: []
         }
         ,{
@@ -878,23 +664,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_seaborgium_dust', inItem: '1x gtceu:seaborgium_dust', inFluid: null,
-            outItems: ['1x gtceu:seaborgium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_seaborgium_fluid', inItem: null, inFluid: 'gtceu:seaborgium 1000',
             outItems: ['1x gtceu:seaborgium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_selenium_dust', inItem: '1x gtceu:selenium_dust', inFluid: null,
-            outItems: ['1x gtceu:selenium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_silicon_dust', inItem: '1x gtceu:silicon_dust', inFluid: null,
-            outItems: ['1x gtceu:silicon_dust'],
             outFluids: []
         }
         ,{
@@ -903,18 +674,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_silver_dust', inItem: '1x gtceu:silver_dust', inFluid: null,
-            outItems: ['1x gtceu:silver_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_silver_fluid', inItem: null, inFluid: 'gtceu:silver 1000',
             outItems: ['1x gtceu:silver_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_sodium_dust', inItem: '1x gtceu:sodium_dust', inFluid: null,
-            outItems: ['1x gtceu:sodium_dust'],
             outFluids: []
         }
         ,{
@@ -923,28 +684,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_strontium_dust', inItem: '1x gtceu:strontium_dust', inFluid: null,
-            outItems: ['1x gtceu:strontium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_sulfur_dust', inItem: '1x gtceu:sulfur_dust', inFluid: null,
-            outItems: ['1x gtceu:sulfur_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_tantalum_dust', inItem: '1x gtceu:tantalum_dust', inFluid: null,
-            outItems: ['1x gtceu:tantalum_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_tantalum_fluid', inItem: null, inFluid: 'gtceu:tantalum 1000',
             outItems: ['1x gtceu:tantalum_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_technetium_dust', inItem: '1x gtceu:technetium_dust', inFluid: null,
-            outItems: ['1x gtceu:technetium_dust'],
             outFluids: []
         }
         ,{
@@ -953,23 +694,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_tellurium_dust', inItem: '1x gtceu:tellurium_dust', inFluid: null,
-            outItems: ['1x gtceu:tellurium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_tennessine_dust', inItem: '1x gtceu:tennessine_dust', inFluid: null,
-            outItems: ['1x gtceu:tennessine_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_tennessine_fluid', inItem: null, inFluid: 'gtceu:tennessine 1000',
             outItems: ['1x gtceu:tennessine_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_terbium_dust', inItem: '1x gtceu:terbium_dust', inFluid: null,
-            outItems: ['1x gtceu:terbium_dust'],
             outFluids: []
         }
         ,{
@@ -978,23 +704,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_thorium_dust', inItem: '1x gtceu:thorium_dust', inFluid: null,
-            outItems: ['1x gtceu:thorium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_thorium_fluid', inItem: null, inFluid: 'gtceu:thorium 1000',
             outItems: ['1x gtceu:thorium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_thallium_dust', inItem: '1x gtceu:thallium_dust', inFluid: null,
-            outItems: ['1x gtceu:thallium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_thulium_dust', inItem: '1x gtceu:thulium_dust', inFluid: null,
-            outItems: ['1x gtceu:thulium_dust'],
             outFluids: []
         }
         ,{
@@ -1003,18 +714,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_tin_dust', inItem: '1x gtceu:tin_dust', inFluid: null,
-            outItems: ['1x gtceu:tin_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_tin_fluid', inItem: null, inFluid: 'gtceu:tin 1000',
             outItems: ['1x gtceu:tin_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_titanium_dust', inItem: '1x gtceu:titanium_dust', inFluid: null,
-            outItems: ['1x gtceu:titanium_dust'],
             outFluids: []
         }
         ,{
@@ -1028,18 +729,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:tritium 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_tungsten_dust', inItem: '1x gtceu:tungsten_dust', inFluid: null,
-            outItems: ['1x gtceu:tungsten_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_tungsten_fluid', inItem: null, inFluid: 'gtceu:tungsten 1000',
             outItems: ['1x gtceu:tungsten_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_uranium_dust', inItem: '1x gtceu:uranium_dust', inFluid: null,
-            outItems: ['1x gtceu:uranium_dust'],
             outFluids: []
         }
         ,{
@@ -1058,11 +749,6 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_vanadium_dust', inItem: '1x gtceu:vanadium_dust', inFluid: null,
-            outItems: ['1x gtceu:vanadium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_vanadium_fluid', inItem: null, inFluid: 'gtceu:vanadium 1000',
             outItems: ['1x gtceu:vanadium_dust'],
             outFluids: []
@@ -1073,18 +759,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:xenon 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_ytterbium_dust', inItem: '1x gtceu:ytterbium_dust', inFluid: null,
-            outItems: ['1x gtceu:ytterbium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_ytterbium_fluid', inItem: null, inFluid: 'gtceu:ytterbium 1000',
             outItems: ['1x gtceu:ytterbium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_yttrium_dust', inItem: '1x gtceu:yttrium_dust', inFluid: null,
-            outItems: ['1x gtceu:yttrium_dust'],
             outFluids: []
         }
         ,{
@@ -1093,23 +769,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_zinc_dust', inItem: '1x gtceu:zinc_dust', inFluid: null,
-            outItems: ['1x gtceu:zinc_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_zinc_fluid', inItem: null, inFluid: 'gtceu:zinc 1000',
             outItems: ['1x gtceu:zinc_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_zirconium_dust', inItem: '1x gtceu:zirconium_dust', inFluid: null,
-            outItems: ['1x gtceu:zirconium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_naquadah_dust', inItem: '1x gtceu:naquadah_dust', inFluid: null,
-            outItems: ['1x gtceu:naquadah_dust'],
             outFluids: []
         }
         ,{
@@ -1118,18 +779,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_enriched_naquadah_dust', inItem: '1x gtceu:enriched_naquadah_dust', inFluid: null,
-            outItems: ['1x gtceu:enriched_naquadah_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_enriched_naquadah_fluid', inItem: null, inFluid: 'gtceu:enriched_naquadah 1000',
             outItems: ['1x gtceu:enriched_naquadah_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_naquadria_dust', inItem: '1x gtceu:naquadria_dust', inFluid: null,
-            outItems: ['1x gtceu:naquadria_dust'],
             outFluids: []
         }
         ,{
@@ -1138,18 +789,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_neutronium_dust', inItem: '1x gtceu:neutronium_dust', inFluid: null,
-            outItems: ['1x gtceu:neutronium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_neutronium_fluid', inItem: null, inFluid: 'gtceu:neutronium 1000',
             outItems: ['1x gtceu:neutronium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_tritanium_dust', inItem: '1x gtceu:tritanium_dust', inFluid: null,
-            outItems: ['1x gtceu:tritanium_dust'],
             outFluids: []
         }
         ,{
@@ -1158,18 +799,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_duranium_dust', inItem: '1x gtceu:duranium_dust', inFluid: null,
-            outItems: ['1x gtceu:duranium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_duranium_fluid', inItem: null, inFluid: 'gtceu:duranium 1000',
             outItems: ['1x gtceu:duranium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_trinium_dust', inItem: '1x gtceu:trinium_dust', inFluid: null,
-            outItems: ['1x gtceu:trinium_dust'],
             outFluids: []
         }
         ,{
@@ -1178,19 +809,14 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_almandine_dust', inItem: '1x gtceu:almandine_dust', inFluid: null,
-            outItems: ['2x gtceu:aluminium_dust', '3x gtceu:iron_dust', '3x gtceu:silicon_dust'],
+            id: 'shanhai:deconstruct/gtceu_almandine_dust', inItem: '20x gtceu:almandine_dust', inFluid: null,
+            outItems: ['3x gtceu:iron_dust', '3x gtceu:silicon_dust', '2x gtceu:aluminium_dust'],
             outFluids: ['gtceu:oxygen 12000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_andradite_dust', inItem: '1x gtceu:andradite_dust', inFluid: null,
-            outItems: ['3x gtceu:calcium_dust', '2x gtceu:iron_dust', '3x gtceu:silicon_dust'],
+            id: 'shanhai:deconstruct/gtceu_andradite_dust', inItem: '20x gtceu:andradite_dust', inFluid: null,
+            outItems: ['3x gtceu:calcium_dust', '3x gtceu:silicon_dust', '2x gtceu:iron_dust'],
             outFluids: ['gtceu:oxygen 12000']
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_annealed_copper_dust', inItem: '1x gtceu:annealed_copper_dust', inFluid: null,
-            outItems: ['1x gtceu:annealed_copper_dust'],
-            outFluids: []
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_annealed_copper_fluid', inItem: null, inFluid: 'gtceu:annealed_copper 1000',
@@ -1198,17 +824,12 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_asbestos_dust', inItem: '1x gtceu:asbestos_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_asbestos_dust', inItem: '18x gtceu:asbestos_dust', inFluid: null,
             outItems: ['3x gtceu:magnesium_dust', '2x gtceu:silicon_dust'],
-            outFluids: ['gtceu:hydrogen 4000', 'gtceu:oxygen 9000']
+            outFluids: ['gtceu:oxygen 9000', 'gtceu:hydrogen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_ash_dust', inItem: '1x gtceu:ash_dust', inFluid: null,
-            outItems: ['1x gtceu:ash_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_hematite_dust', inItem: '1x gtceu:hematite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_hematite_dust', inItem: '5x gtceu:hematite_dust', inFluid: null,
             outItems: ['2x gtceu:iron_dust'],
             outFluids: ['gtceu:oxygen 3000']
         }
@@ -1223,9 +844,9 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_blue_topaz_dust', inItem: '1x gtceu:blue_topaz_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_blue_topaz_dust', inItem: '13x gtceu:blue_topaz_dust', inFluid: null,
             outItems: ['2x gtceu:aluminium_dust', '1x gtceu:silicon_dust'],
-            outFluids: ['gtceu:fluorine 2000', 'gtceu:hydrogen 2000', 'gtceu:oxygen 6000']
+            outFluids: ['gtceu:oxygen 6000', 'gtceu:fluorine 2000', 'gtceu:hydrogen 2000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_bone_dust', inItem: '1x gtceu:bone_dust', inFluid: null,
@@ -1253,42 +874,37 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_goethite_dust', inItem: '1x gtceu:goethite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_goethite_dust', inItem: '4x gtceu:goethite_dust', inFluid: null,
             outItems: ['1x gtceu:iron_dust'],
-            outFluids: ['gtceu:hydrogen 1000', 'gtceu:oxygen 2000']
+            outFluids: ['gtceu:oxygen 2000', 'gtceu:hydrogen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_calcite_dust', inItem: '1x gtceu:calcite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_calcite_dust', inItem: '5x gtceu:calcite_dust', inFluid: null,
             outItems: ['1x gtceu:calcium_dust', '1x gtceu:carbon_dust'],
             outFluids: ['gtceu:oxygen 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_cassiterite_dust', inItem: '1x gtceu:cassiterite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_cassiterite_dust', inItem: '3x gtceu:cassiterite_dust', inFluid: null,
             outItems: ['1x gtceu:tin_dust'],
             outFluids: ['gtceu:oxygen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_cassiterite_sand_dust', inItem: '1x gtceu:cassiterite_sand_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_cassiterite_sand_dust', inItem: '3x gtceu:cassiterite_sand_dust', inFluid: null,
             outItems: ['1x gtceu:tin_dust'],
             outFluids: ['gtceu:oxygen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_chalcopyrite_dust', inItem: '1x gtceu:chalcopyrite_dust', inFluid: null,
-            outItems: ['1x gtceu:copper_dust', '1x gtceu:iron_dust', '2x gtceu:sulfur_dust'],
+            id: 'shanhai:deconstruct/gtceu_chalcopyrite_dust', inItem: '4x gtceu:chalcopyrite_dust', inFluid: null,
+            outItems: ['2x gtceu:sulfur_dust', '1x gtceu:copper_dust', '1x gtceu:iron_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_charcoal_dust', inItem: '1x gtceu:charcoal_dust', inFluid: null,
-            outItems: ['1x gtceu:charcoal_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_chromite_dust', inItem: '1x gtceu:chromite_dust', inFluid: null,
-            outItems: ['1x gtceu:iron_dust', '2x gtceu:chromium_dust'],
+            id: 'shanhai:deconstruct/gtceu_chromite_dust', inItem: '7x gtceu:chromite_dust', inFluid: null,
+            outItems: ['2x gtceu:chromium_dust', '1x gtceu:iron_dust'],
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_cinnabar_dust', inItem: '1x gtceu:cinnabar_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_cinnabar_dust', inItem: '2x gtceu:cinnabar_dust', inFluid: null,
             outItems: ['1x gtceu:sulfur_dust'],
             outFluids: ['gtceu:mercury 1000']
         }
@@ -1299,11 +915,11 @@ ServerEvents.recipes(function (event) {
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_coal_dust', inItem: '1x gtceu:coal_dust', inFluid: null,
-            outItems: ['1x gtceu:coal_dust'],
+            outItems: ['2x gtceu:carbon_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_cobaltite_dust', inItem: '1x gtceu:cobaltite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_cobaltite_dust', inItem: '3x gtceu:cobaltite_dust', inFluid: null,
             outItems: ['1x gtceu:cobalt_dust', '1x gtceu:arsenic_dust', '1x gtceu:sulfur_dust'],
             outFluids: []
         }
@@ -1323,17 +939,7 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_dark_ash_dust', inItem: '1x gtceu:dark_ash_dust', inFluid: null,
-            outItems: ['1x gtceu:dark_ash_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_diamond_dust', inItem: '1x gtceu:diamond_dust', inFluid: null,
-            outItems: ['1x gtceu:diamond_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_electrum_dust', inItem: '1x gtceu:electrum_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_electrum_dust', inItem: '2x gtceu:electrum_dust', inFluid: null,
             outItems: ['1x gtceu:silver_dust', '1x gtceu:gold_dust'],
             outFluids: []
         }
@@ -1343,28 +949,28 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_emerald_dust', inItem: '1x gtceu:emerald_dust', inFluid: null,
-            outItems: ['3x gtceu:beryllium_dust', '2x gtceu:aluminium_dust', '6x gtceu:silicon_dust'],
+            id: 'shanhai:deconstruct/gtceu_emerald_dust', inItem: '29x gtceu:emerald_dust', inFluid: null,
+            outItems: ['6x gtceu:silicon_dust', '3x gtceu:beryllium_dust', '2x gtceu:aluminium_dust'],
             outFluids: ['gtceu:oxygen 18000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_galena_dust', inItem: '1x gtceu:galena_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_galena_dust', inItem: '2x gtceu:galena_dust', inFluid: null,
             outItems: ['1x gtceu:lead_dust', '1x gtceu:sulfur_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_garnierite_dust', inItem: '1x gtceu:garnierite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_garnierite_dust', inItem: '2x gtceu:garnierite_dust', inFluid: null,
             outItems: ['1x gtceu:nickel_dust'],
             outFluids: ['gtceu:oxygen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_green_sapphire_dust', inItem: '1x gtceu:green_sapphire_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_green_sapphire_dust', inItem: '5x gtceu:green_sapphire_dust', inFluid: null,
             outItems: ['2x gtceu:aluminium_dust'],
             outFluids: ['gtceu:oxygen 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_grossular_dust', inItem: '1x gtceu:grossular_dust', inFluid: null,
-            outItems: ['3x gtceu:calcium_dust', '2x gtceu:aluminium_dust', '3x gtceu:silicon_dust'],
+            id: 'shanhai:deconstruct/gtceu_grossular_dust', inItem: '20x gtceu:grossular_dust', inFluid: null,
+            outItems: ['3x gtceu:calcium_dust', '3x gtceu:silicon_dust', '2x gtceu:aluminium_dust'],
             outFluids: ['gtceu:oxygen 12000']
         }
         ,{
@@ -1378,9 +984,9 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:hydrogen 2000', 'gtceu:oxygen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_ilmenite_dust', inItem: '1x gtceu:ilmenite_dust', inFluid: null,
-            outItems: ['1x gtceu:iron_dust', '1x gtceu:titanium_dust'],
-            outFluids: ['gtceu:oxygen 3000']
+            id: 'shanhai:deconstruct/gtceu_ilmenite_dust', inItem: '5x gtceu:ilmenite_dust', inFluid: null,
+            outItems: ['2x gtceu:titanium_dust', '1x gtceu:iron_dust'],
+            outFluids: ['gtceu:oxygen 6000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_rutile_dust', inItem: '1x gtceu:rutile_dust', inFluid: null,
@@ -1388,9 +994,9 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_bauxite_dust', inItem: '1x gtceu:bauxite_dust', inFluid: null,
-            outItems: ['2x gtceu:aluminium_dust'],
-            outFluids: ['gtceu:oxygen 3000']
+            id: 'shanhai:deconstruct/gtceu_bauxite_dust', inItem: '15x gtceu:bauxite_dust', inFluid: null,
+            outItems: ['6x gtceu:aluminium_dust', '1x gtceu:titanium_dust'],
+            outFluids: ['gtceu:oxygen 11000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_invar_dust', inItem: '1x gtceu:invar_dust', inFluid: null,
@@ -1413,8 +1019,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_lazurite_dust', inItem: '1x gtceu:lazurite_dust', inFluid: null,
-            outItems: ['6x gtceu:aluminium_dust', '6x gtceu:silicon_dust', '8x gtceu:calcium_dust', '8x gtceu:sodium_dust'],
+            id: 'shanhai:deconstruct/gtceu_lazurite_dust', inItem: '14x gtceu:lazurite_dust', inFluid: null,
+            outItems: ['4x gtceu:calcium_dust', '4x gtceu:sodium_dust', '3x gtceu:aluminium_dust', '3x gtceu:silicon_dust'],
             outFluids: []
         }
         ,{
@@ -1428,18 +1034,18 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_magnesite_dust', inItem: '1x gtceu:magnesite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_magnesite_dust', inItem: '5x gtceu:magnesite_dust', inFluid: null,
             outItems: ['1x gtceu:magnesium_dust', '1x gtceu:carbon_dust'],
             outFluids: ['gtceu:oxygen 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_magnetite_dust', inItem: '1x gtceu:magnetite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_magnetite_dust', inItem: '7x gtceu:magnetite_dust', inFluid: null,
             outItems: ['3x gtceu:iron_dust'],
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_molybdenite_dust', inItem: '1x gtceu:molybdenite_dust', inFluid: null,
-            outItems: ['1x gtceu:molybdenum_dust', '2x gtceu:sulfur_dust'],
+            id: 'shanhai:deconstruct/gtceu_molybdenite_dust', inItem: '3x gtceu:molybdenite_dust', inFluid: null,
+            outItems: ['3x gtceu:rhenium_dust', '1x gtceu:gold_dust', '1x gtceu:molybdenum_dust'],
             outFluids: []
         }
         ,{
@@ -1478,7 +1084,7 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_phosphate_dust', inItem: '1x gtceu:phosphate_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_phosphate_dust', inItem: '5x gtceu:phosphate_dust', inFluid: null,
             outItems: ['1x gtceu:phosphorus_dust'],
             outFluids: ['gtceu:oxygen 4000']
         }
@@ -1533,27 +1139,27 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:fluorine 2000', 'gtceu:oxygen 10000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_powellite_dust', inItem: '1x gtceu:powellite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_powellite_dust', inItem: '6x gtceu:powellite_dust', inFluid: null,
             outItems: ['1x gtceu:calcium_dust', '1x gtceu:molybdenum_dust'],
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_pyrite_dust', inItem: '1x gtceu:pyrite_dust', inFluid: null,
-            outItems: ['1x gtceu:iron_dust', '2x gtceu:sulfur_dust'],
+            id: 'shanhai:deconstruct/gtceu_pyrite_dust', inItem: '3x gtceu:pyrite_dust', inFluid: null,
+            outItems: ['2x gtceu:sulfur_dust', '1x gtceu:iron_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_pyrolusite_dust', inItem: '1x gtceu:pyrolusite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_pyrolusite_dust', inItem: '3x gtceu:pyrolusite_dust', inFluid: null,
             outItems: ['1x gtceu:manganese_dust'],
             outFluids: ['gtceu:oxygen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_pyrope_dust', inItem: '1x gtceu:pyrope_dust', inFluid: null,
-            outItems: ['2x gtceu:aluminium_dust', '3x gtceu:magnesium_dust', '3x gtceu:silicon_dust'],
+            id: 'shanhai:deconstruct/gtceu_pyrope_dust', inItem: '20x gtceu:pyrope_dust', inFluid: null,
+            outItems: ['3x gtceu:magnesium_dust', '3x gtceu:silicon_dust', '2x gtceu:aluminium_dust'],
             outFluids: ['gtceu:oxygen 12000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_rock_salt_dust', inItem: '1x gtceu:rock_salt_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_rock_salt_dust', inItem: '2x gtceu:rock_salt_dust', inFluid: null,
             outItems: ['1x gtceu:potassium_dust'],
             outFluids: ['gtceu:chlorine 1000']
         }
@@ -1573,22 +1179,22 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_ruby_dust', inItem: '1x gtceu:ruby_dust', inFluid: null,
-            outItems: ['1x gtceu:chromium_dust', '2x gtceu:aluminium_dust'],
+            id: 'shanhai:deconstruct/gtceu_ruby_dust', inItem: '6x gtceu:ruby_dust', inFluid: null,
+            outItems: ['2x gtceu:aluminium_dust', '1x gtceu:chromium_dust'],
             outFluids: ['gtceu:oxygen 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_salt_dust', inItem: '1x gtceu:salt_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_salt_dust', inItem: '2x gtceu:salt_dust', inFluid: null,
             outItems: ['1x gtceu:sodium_dust'],
             outFluids: ['gtceu:chlorine 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_saltpeter_dust', inItem: '1x gtceu:saltpeter_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_saltpeter_dust', inItem: '5x gtceu:saltpeter_dust', inFluid: null,
             outItems: ['1x gtceu:potassium_dust'],
-            outFluids: ['gtceu:nitrogen 1000', 'gtceu:oxygen 3000']
+            outFluids: ['gtceu:oxygen 3000', 'gtceu:nitrogen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_sapphire_dust', inItem: '1x gtceu:sapphire_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_sapphire_dust', inItem: '5x gtceu:sapphire_dust', inFluid: null,
             outItems: ['2x gtceu:aluminium_dust'],
             outFluids: ['gtceu:oxygen 3000']
         }
@@ -1598,8 +1204,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_sodalite_dust', inItem: '1x gtceu:sodalite_dust', inFluid: null,
-            outItems: ['3x gtceu:aluminium_dust', '3x gtceu:silicon_dust', '4x gtceu:sodium_dust'],
+            id: 'shanhai:deconstruct/gtceu_sodalite_dust', inItem: '11x gtceu:sodalite_dust', inFluid: null,
+            outItems: ['4x gtceu:sodium_dust', '3x gtceu:aluminium_dust', '3x gtceu:silicon_dust'],
             outFluids: ['gtceu:chlorine 1000']
         }
         ,{
@@ -1608,14 +1214,9 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 9000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_tantalite_dust', inItem: '1x gtceu:tantalite_dust', inFluid: null,
-            outItems: ['1x gtceu:manganese_dust', '2x gtceu:tantalum_dust'],
+            id: 'shanhai:deconstruct/gtceu_tantalite_dust', inItem: '9x gtceu:tantalite_dust', inFluid: null,
+            outItems: ['2x gtceu:tantalum_dust', '1x gtceu:manganese_dust'],
             outFluids: ['gtceu:oxygen 6000']
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_coke_dust', inItem: '1x gtceu:coke_dust', inFluid: null,
-            outItems: ['1x gtceu:coke_dust'],
-            outFluids: []
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_soldering_alloy_dust', inItem: '1x gtceu:soldering_alloy_dust', inFluid: null,
@@ -1628,13 +1229,13 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_spessartine_dust', inItem: '1x gtceu:spessartine_dust', inFluid: null,
-            outItems: ['2x gtceu:aluminium_dust', '3x gtceu:manganese_dust', '3x gtceu:silicon_dust'],
+            id: 'shanhai:deconstruct/gtceu_spessartine_dust', inItem: '20x gtceu:spessartine_dust', inFluid: null,
+            outItems: ['3x gtceu:manganese_dust', '3x gtceu:silicon_dust', '2x gtceu:aluminium_dust'],
             outFluids: ['gtceu:oxygen 12000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_sphalerite_dust', inItem: '1x gtceu:sphalerite_dust', inFluid: null,
-            outItems: ['1x gtceu:zinc_dust', '1x gtceu:sulfur_dust'],
+            id: 'shanhai:deconstruct/gtceu_sphalerite_dust', inItem: '40x gtceu:sphalerite_dust', inFluid: null,
+            outItems: ['20x gtceu:zinc_dust', '20x gtceu:sulfur_dust', '1x gtceu:gallium_dust'],
             outFluids: []
         }
         ,{
@@ -1648,23 +1249,18 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_steel_dust', inItem: '1x gtceu:steel_dust', inFluid: null,
-            outItems: ['1x gtceu:steel_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_steel_fluid', inItem: null, inFluid: 'gtceu:steel 1000',
             outItems: ['1x gtceu:steel_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_stibnite_dust', inItem: '1x gtceu:stibnite_dust', inFluid: null,
-            outItems: ['2x gtceu:antimony_dust', '3x gtceu:sulfur_dust'],
+            id: 'shanhai:deconstruct/gtceu_stibnite_dust', inItem: '5x gtceu:stibnite_dust', inFluid: null,
+            outItems: ['3x gtceu:sulfur_dust', '2x gtceu:antimony_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_tetrahedrite_dust', inItem: '1x gtceu:tetrahedrite_dust', inFluid: null,
-            outItems: ['3x gtceu:copper_dust', '1x gtceu:antimony_dust', '3x gtceu:sulfur_dust', '1x gtceu:iron_dust'],
+            id: 'shanhai:deconstruct/gtceu_tetrahedrite_dust', inItem: '8x gtceu:tetrahedrite_dust', inFluid: null,
+            outItems: ['3x gtceu:copper_dust', '3x gtceu:sulfur_dust', '1x gtceu:antimony_dust', '1x gtceu:iron_dust'],
             outFluids: []
         }
         ,{
@@ -1678,9 +1274,9 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_topaz_dust', inItem: '1x gtceu:topaz_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_topaz_dust', inItem: '6x gtceu:topaz_dust', inFluid: null,
             outItems: ['2x gtceu:aluminium_dust', '1x gtceu:silicon_dust'],
-            outFluids: ['gtceu:fluorine 1000', 'gtceu:hydrogen 2000']
+            outFluids: ['gtceu:hydrogen 2000', 'gtceu:fluorine 1000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_tungstate_dust', inItem: '1x gtceu:tungstate_dust', inFluid: null,
@@ -1703,8 +1299,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_uvarovite_dust', inItem: '1x gtceu:uvarovite_dust', inFluid: null,
-            outItems: ['3x gtceu:calcium_dust', '2x gtceu:chromium_dust', '3x gtceu:silicon_dust'],
+            id: 'shanhai:deconstruct/gtceu_uvarovite_dust', inItem: '20x gtceu:uvarovite_dust', inFluid: null,
+            outItems: ['3x gtceu:calcium_dust', '3x gtceu:silicon_dust', '2x gtceu:chromium_dust'],
             outFluids: ['gtceu:oxygen 12000']
         }
         ,{
@@ -1718,24 +1314,19 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_wrought_iron_dust', inItem: '1x gtceu:wrought_iron_dust', inFluid: null,
-            outItems: ['1x gtceu:wrought_iron_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_wrought_iron_fluid', inItem: null, inFluid: 'gtceu:wrought_iron 1000',
             outItems: ['1x gtceu:wrought_iron_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_wulfenite_dust', inItem: '1x gtceu:wulfenite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_wulfenite_dust', inItem: '6x gtceu:wulfenite_dust', inFluid: null,
             outItems: ['1x gtceu:lead_dust', '1x gtceu:molybdenum_dust'],
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_yellow_limonite_dust', inItem: '1x gtceu:yellow_limonite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_yellow_limonite_dust', inItem: '4x gtceu:yellow_limonite_dust', inFluid: null,
             outItems: ['1x gtceu:iron_dust'],
-            outFluids: ['gtceu:hydrogen 1000', 'gtceu:oxygen 2000']
+            outFluids: ['gtceu:oxygen 2000', 'gtceu:hydrogen 1000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_yttrium_barium_cuprate_dust', inItem: '1x gtceu:yttrium_barium_cuprate_dust', inFluid: null,
@@ -1764,12 +1355,7 @@ ServerEvents.recipes(function (event) {
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_graphite_dust', inItem: '1x gtceu:graphite_dust', inFluid: null,
-            outItems: ['1x gtceu:graphite_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_graphene_dust', inItem: '1x gtceu:graphene_dust', inFluid: null,
-            outItems: ['1x gtceu:graphene_dust'],
+            outItems: ['4x gtceu:carbon_dust'],
             outFluids: []
         }
         ,{
@@ -1798,12 +1384,12 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:chlorine 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_bornite_dust', inItem: '1x gtceu:bornite_dust', inFluid: null,
-            outItems: ['5x gtceu:copper_dust', '1x gtceu:iron_dust', '4x gtceu:sulfur_dust'],
+            id: 'shanhai:deconstruct/gtceu_bornite_dust', inItem: '10x gtceu:bornite_dust', inFluid: null,
+            outItems: ['5x gtceu:copper_dust', '4x gtceu:sulfur_dust', '1x gtceu:iron_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_chalcocite_dust', inItem: '1x gtceu:chalcocite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_chalcocite_dust', inItem: '3x gtceu:chalcocite_dust', inFluid: null,
             outItems: ['2x gtceu:copper_dust', '1x gtceu:sulfur_dust'],
             outFluids: []
         }
@@ -1823,7 +1409,7 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_soda_ash_dust', inItem: '1x gtceu:soda_ash_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_soda_ash_dust', inItem: '6x gtceu:soda_ash_dust', inFluid: null,
             outItems: ['2x gtceu:sodium_dust', '1x gtceu:carbon_dust'],
             outFluids: ['gtceu:oxygen 3000']
         }
@@ -1848,7 +1434,7 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 8000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_silicon_dioxide_dust', inItem: '1x gtceu:silicon_dioxide_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_silicon_dioxide_dust', inItem: '3x gtceu:silicon_dioxide_dust', inFluid: null,
             outItems: ['1x gtceu:silicon_dust'],
             outFluids: ['gtceu:oxygen 2000']
         }
@@ -1888,8 +1474,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_realgar_dust', inItem: '1x gtceu:realgar_dust', inFluid: null,
-            outItems: ['4x gtceu:arsenic_dust', '4x gtceu:sulfur_dust'],
+            id: 'shanhai:deconstruct/gtceu_realgar_dust', inItem: '2x gtceu:realgar_dust', inFluid: null,
+            outItems: ['1x gtceu:arsenic_dust', '1x gtceu:sulfur_dust'],
             outFluids: []
         }
         ,{
@@ -1908,12 +1494,12 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_antimony_trioxide_dust', inItem: '1x gtceu:antimony_trioxide_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_antimony_trioxide_dust', inItem: '5x gtceu:antimony_trioxide_dust', inFluid: null,
             outItems: ['2x gtceu:antimony_dust'],
             outFluids: ['gtceu:oxygen 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_zincite_dust', inItem: '1x gtceu:zincite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_zincite_dust', inItem: '2x gtceu:zincite_dust', inFluid: null,
             outItems: ['1x gtceu:zinc_dust'],
             outFluids: ['gtceu:oxygen 1000']
         }
@@ -1923,7 +1509,7 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_cobalt_oxide_dust', inItem: '1x gtceu:cobalt_oxide_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_cobalt_oxide_dust', inItem: '2x gtceu:cobalt_oxide_dust', inFluid: null,
             outItems: ['1x gtceu:cobalt_dust'],
             outFluids: ['gtceu:oxygen 1000']
         }
@@ -1933,7 +1519,7 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_massicot_dust', inItem: '1x gtceu:massicot_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_massicot_dust', inItem: '2x gtceu:massicot_dust', inFluid: null,
             outItems: ['1x gtceu:lead_dust'],
             outFluids: ['gtceu:oxygen 1000']
         }
@@ -1958,64 +1544,59 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:fluorine 1000', 'gtceu:oxygen 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_pentlandite_dust', inItem: '1x gtceu:pentlandite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_pentlandite_dust', inItem: '17x gtceu:pentlandite_dust', inFluid: null,
             outItems: ['9x gtceu:nickel_dust', '8x gtceu:sulfur_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_spodumene_dust', inItem: '1x gtceu:spodumene_dust', inFluid: null,
-            outItems: ['1x gtceu:lithium_dust', '1x gtceu:aluminium_dust', '2x gtceu:silicon_dust'],
+            id: 'shanhai:deconstruct/gtceu_spodumene_dust', inItem: '10x gtceu:spodumene_dust', inFluid: null,
+            outItems: ['2x gtceu:silicon_dust', '1x gtceu:lithium_dust', '1x gtceu:aluminium_dust'],
             outFluids: ['gtceu:oxygen 6000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_lepidolite_dust', inItem: '1x gtceu:lepidolite_dust', inFluid: null,
-            outItems: ['1x gtceu:potassium_dust', '3x gtceu:lithium_dust', '4x gtceu:aluminium_dust'],
-            outFluids: ['gtceu:fluorine 2000', 'gtceu:oxygen 10000']
+            id: 'shanhai:deconstruct/gtceu_lepidolite_dust', inItem: '20x gtceu:lepidolite_dust', inFluid: null,
+            outItems: ['4x gtceu:aluminium_dust', '3x gtceu:lithium_dust', '1x gtceu:potassium_dust'],
+            outFluids: ['gtceu:oxygen 10000', 'gtceu:fluorine 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_glauconite_sand_dust', inItem: '1x gtceu:glauconite_sand_dust', inFluid: null,
-            outItems: ['1x gtceu:potassium_dust', '2x gtceu:magnesium_dust', '4x gtceu:aluminium_dust'],
-            outFluids: ['gtceu:hydrogen 2000', 'gtceu:oxygen 12000']
+            id: 'shanhai:deconstruct/gtceu_glauconite_sand_dust', inItem: '21x gtceu:glauconite_sand_dust', inFluid: null,
+            outItems: ['4x gtceu:aluminium_dust', '2x gtceu:magnesium_dust', '1x gtceu:potassium_dust'],
+            outFluids: ['gtceu:oxygen 12000', 'gtceu:hydrogen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_malachite_dust', inItem: '1x gtceu:malachite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_malachite_dust', inItem: '10x gtceu:malachite_dust', inFluid: null,
             outItems: ['2x gtceu:copper_dust', '1x gtceu:carbon_dust'],
-            outFluids: ['gtceu:hydrogen 2000', 'gtceu:oxygen 5000']
+            outFluids: ['gtceu:oxygen 5000', 'gtceu:hydrogen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_mica_dust', inItem: '1x gtceu:mica_dust', inFluid: null,
-            outItems: ['1x gtceu:potassium_dust', '3x gtceu:aluminium_dust', '3x gtceu:silicon_dust'],
-            outFluids: ['gtceu:fluorine 2000', 'gtceu:oxygen 10000']
+            id: 'shanhai:deconstruct/gtceu_mica_dust', inItem: '19x gtceu:mica_dust', inFluid: null,
+            outItems: ['3x gtceu:aluminium_dust', '3x gtceu:silicon_dust', '1x gtceu:potassium_dust'],
+            outFluids: ['gtceu:oxygen 10000', 'gtceu:fluorine 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_barite_dust', inItem: '1x gtceu:barite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_barite_dust', inItem: '6x gtceu:barite_dust', inFluid: null,
             outItems: ['1x gtceu:barium_dust', '1x gtceu:sulfur_dust'],
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_alunite_dust', inItem: '1x gtceu:alunite_dust', inFluid: null,
-            outItems: ['1x gtceu:potassium_dust', '3x gtceu:aluminium_dust', '2x gtceu:silicon_dust'],
-            outFluids: ['gtceu:hydrogen 6000', 'gtceu:oxygen 14000']
+            id: 'shanhai:deconstruct/gtceu_alunite_dust', inItem: '26x gtceu:alunite_dust', inFluid: null,
+            outItems: ['3x gtceu:aluminium_dust', '2x gtceu:silicon_dust', '1x gtceu:potassium_dust'],
+            outFluids: ['gtceu:oxygen 14000', 'gtceu:hydrogen 6000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_talc_dust', inItem: '1x gtceu:talc_dust', inFluid: null,
-            outItems: ['3x gtceu:magnesium_dust', '4x gtceu:silicon_dust'],
-            outFluids: ['gtceu:hydrogen 2000', 'gtceu:oxygen 12000']
+            id: 'shanhai:deconstruct/gtceu_talc_dust', inItem: '21x gtceu:talc_dust', inFluid: null,
+            outItems: ['4x gtceu:silicon_dust', '3x gtceu:magnesium_dust'],
+            outFluids: ['gtceu:oxygen 12000', 'gtceu:hydrogen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_soapstone_dust', inItem: '1x gtceu:soapstone_dust', inFluid: null,
-            outItems: ['3x gtceu:magnesium_dust', '4x gtceu:silicon_dust'],
-            outFluids: ['gtceu:hydrogen 2000', 'gtceu:oxygen 12000']
+            id: 'shanhai:deconstruct/gtceu_soapstone_dust', inItem: '21x gtceu:soapstone_dust', inFluid: null,
+            outItems: ['4x gtceu:silicon_dust', '3x gtceu:magnesium_dust'],
+            outFluids: ['gtceu:oxygen 12000', 'gtceu:hydrogen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_kyanite_dust', inItem: '1x gtceu:kyanite_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_kyanite_dust', inItem: '8x gtceu:kyanite_dust', inFluid: null,
             outItems: ['2x gtceu:aluminium_dust', '1x gtceu:silicon_dust'],
             outFluids: ['gtceu:oxygen 5000']
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_magnetic_iron_dust', inItem: '1x gtceu:magnetic_iron_dust', inFluid: null,
-            outItems: ['1x gtceu:magnetic_iron_dust'],
-            outFluids: []
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_tungsten_carbide_dust', inItem: '1x gtceu:tungsten_carbide_dust', inFluid: null,
@@ -2128,8 +1709,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:nitrogen 2000', 'gtceu:oxygen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_ender_pearl_dust', inItem: '1x gtceu:ender_pearl_dust', inFluid: null,
-            outItems: ['1x gtceu:beryllium_dust', '4x gtceu:potassium_dust'],
+            id: 'shanhai:deconstruct/gtceu_ender_pearl_dust', inItem: '10x gtceu:ender_pearl_dust', inFluid: null,
+            outItems: ['4x gtceu:potassium_dust', '1x gtceu:beryllium_dust'],
             outFluids: ['gtceu:nitrogen 5000']
         }
         ,{
@@ -2141,11 +1722,6 @@ ServerEvents.recipes(function (event) {
             id: 'shanhai:deconstruct/gtceu_potassium_feldspar_dust', inItem: '1x gtceu:potassium_feldspar_dust', inFluid: null,
             outItems: ['1x gtceu:potassium_dust', '1x gtceu:aluminium_dust', '1x gtceu:silicon_dust'],
             outFluids: ['gtceu:oxygen 8000']
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_magnetic_neodymium_dust', inItem: '1x gtceu:magnetic_neodymium_dust', inFluid: null,
-            outItems: ['1x gtceu:magnetic_neodymium_dust'],
-            outFluids: []
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_hydrochloric_acid_fluid', inItem: null, inFluid: 'gtceu:hydrochloric_acid 1000',
@@ -2165,11 +1741,6 @@ ServerEvents.recipes(function (event) {
         ,{
             id: 'shanhai:deconstruct/gtceu_sodium_potassium_fluid', inItem: null, inFluid: 'gtceu:sodium_potassium 1000',
             outItems: ['1x gtceu:sodium_dust', '1x gtceu:potassium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_magnetic_samarium_dust', inItem: '1x gtceu:magnetic_samarium_dust', inFluid: null,
-            outItems: ['1x gtceu:magnetic_samarium_dust'],
             outFluids: []
         }
         ,{
@@ -2348,7 +1919,7 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_pyrochlore_dust', inItem: '1x gtceu:pyrochlore_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_pyrochlore_dust', inItem: '11x gtceu:pyrochlore_dust', inFluid: null,
             outItems: ['2x gtceu:calcium_dust', '2x gtceu:niobium_dust'],
             outFluids: ['gtceu:oxygen 7000']
         }
@@ -2928,14 +2499,9 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 9000', 'gtceu:hydrogen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_activated_carbon_dust', inItem: '1x gtceu:activated_carbon_dust', inFluid: null,
-            outItems: ['1x gtceu:activated_carbon_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_borax_dust', inItem: '1x gtceu:borax_dust', inFluid: null,
-            outItems: ['2x gtceu:sodium_dust', '4x gtceu:boron_dust'],
-            outFluids: ['gtceu:hydrogen 20000', 'gtceu:oxygen 17000']
+            id: 'shanhai:deconstruct/gtceu_borax_dust', inItem: '2300x gtceu:borax_dust', inFluid: null,
+            outItems: ['400x gtceu:boron_dust', '200x gtceu:sodium_dust'],
+            outFluids: ['gtceu:oxygen 701000', 'gtceu:hydrogen 2000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_salt_water_fluid', inItem: null, inFluid: 'gtceu:salt_water 1000',
@@ -2943,18 +2509,18 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:chlorine 1000', 'gtceu:hydrogen 2000', 'gtceu:oxygen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_olivine_dust', inItem: '1x gtceu:olivine_dust', inFluid: null,
-            outItems: ['2x gtceu:magnesium_dust', '1x gtceu:iron_dust', '2x gtceu:silicon_dust'],
+            id: 'shanhai:deconstruct/gtceu_olivine_dust', inItem: '15x gtceu:olivine_dust', inFluid: null,
+            outItems: ['6x gtceu:magnesium_dust', '3x gtceu:iron_dust', '2x gtceu:silicon_dust'],
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_opal_dust', inItem: '1x gtceu:opal_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_opal_dust', inItem: '3x gtceu:opal_dust', inFluid: null,
             outItems: ['1x gtceu:silicon_dust'],
             outFluids: ['gtceu:oxygen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_amethyst_dust', inItem: '1x gtceu:amethyst_dust', inFluid: null,
-            outItems: ['4x gtceu:silicon_dust', '1x gtceu:iron_dust'],
+            id: 'shanhai:deconstruct/gtceu_amethyst_dust', inItem: '15x gtceu:amethyst_dust', inFluid: null,
+            outItems: ['4x gtceu:silicon_dust', '3x gtceu:iron_dust'],
             outFluids: ['gtceu:oxygen 8000']
         }
         ,{
@@ -2988,11 +2554,6 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_damascus_steel_dust', inItem: '1x gtceu:damascus_steel_dust', inFluid: null,
-            outItems: ['1x gtceu:damascus_steel_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_damascus_steel_fluid', inItem: null, inFluid: 'gtceu:damascus_steel 1000',
             outItems: ['1x gtceu:damascus_steel_dust'],
             outFluids: []
@@ -3018,19 +2579,19 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_tricalcium_phosphate_dust', inItem: '1x gtceu:tricalcium_phosphate_dust', inFluid: null,
-            outItems: ['3x gtceu:calcium_dust', '2x gtceu:phosphorus_dust'],
+            id: 'shanhai:deconstruct/gtceu_tricalcium_phosphate_dust', inItem: '25x gtceu:tricalcium_phosphate_dust', inFluid: null,
+            outItems: ['15x gtceu:calcium_dust', '2x gtceu:phosphorus_dust'],
             outFluids: ['gtceu:oxygen 8000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_red_garnet_dust', inItem: '1x gtceu:red_garnet_dust', inFluid: null,
-            outItems: ['32x gtceu:aluminium_dust', '9x gtceu:magnesium_dust', '48x gtceu:silicon_dust', '15x gtceu:iron_dust', '24x gtceu:manganese_dust'],
+            id: 'shanhai:deconstruct/gtceu_red_garnet_dust', inItem: '320x gtceu:red_garnet_dust', inFluid: null,
+            outItems: ['48x gtceu:silicon_dust', '32x gtceu:aluminium_dust', '24x gtceu:manganese_dust', '15x gtceu:iron_dust', '9x gtceu:magnesium_dust'],
             outFluids: ['gtceu:oxygen 192000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_yellow_garnet_dust', inItem: '1x gtceu:yellow_garnet_dust', inFluid: null,
-            outItems: ['48x gtceu:calcium_dust', '10x gtceu:iron_dust', '48x gtceu:silicon_dust', '16x gtceu:aluminium_dust', '6x gtceu:chromium_dust'],
-            outFluids: ['gtceu:oxygen 192000']
+            id: 'shanhai:deconstruct/gtceu_yellow_garnet_dust', inItem: '160x gtceu:yellow_garnet_dust', inFluid: null,
+            outItems: ['24x gtceu:calcium_dust', '24x gtceu:silicon_dust', '8x gtceu:aluminium_dust', '5x gtceu:iron_dust', '3x gtceu:chromium_dust'],
+            outFluids: ['gtceu:oxygen 96000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_marble_dust', inItem: '1x gtceu:marble_dust', inFluid: null,
@@ -3048,8 +2609,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 11000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_vanadium_magnetite_dust', inItem: '1x gtceu:vanadium_magnetite_dust', inFluid: null,
-            outItems: ['3x gtceu:iron_dust', '1x gtceu:vanadium_dust'],
+            id: 'shanhai:deconstruct/gtceu_vanadium_magnetite_dust', inItem: '14x gtceu:vanadium_magnetite_dust', inFluid: null,
+            outItems: ['7x gtceu:vanadium_dust', '3x gtceu:iron_dust'],
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
@@ -3058,19 +2619,19 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_pollucite_dust', inItem: '1x gtceu:pollucite_dust', inFluid: null,
-            outItems: ['2x gtceu:caesium_dust', '2x gtceu:aluminium_dust', '4x gtceu:silicon_dust'],
-            outFluids: ['gtceu:hydrogen 4000', 'gtceu:oxygen 14000']
+            id: 'shanhai:deconstruct/gtceu_pollucite_dust', inItem: '11000x gtceu:pollucite_dust', inFluid: null,
+            outItems: ['2000x gtceu:silicon_dust', '1000x gtceu:caesium_dust', '1000x gtceu:aluminium_dust'],
+            outFluids: ['gtceu:oxygen 6001000', 'gtceu:hydrogen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_bentonite_dust', inItem: '1x gtceu:bentonite_dust', inFluid: null,
-            outItems: ['1x gtceu:sodium_dust', '6x gtceu:magnesium_dust', '12x gtceu:silicon_dust'],
-            outFluids: ['gtceu:hydrogen 14000', 'gtceu:oxygen 41000']
+            id: 'shanhai:deconstruct/gtceu_bentonite_dust', inItem: '6000x gtceu:bentonite_dust', inFluid: null,
+            outItems: ['2400x gtceu:silicon_dust', '1200x gtceu:magnesium_dust', '200x gtceu:sodium_dust'],
+            outFluids: ['gtceu:hydrogen 1202000', 'gtceu:oxygen 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_fullers_earth_dust', inItem: '1x gtceu:fullers_earth_dust', inFluid: null,
-            outItems: ['1x gtceu:magnesium_dust', '4x gtceu:silicon_dust'],
-            outFluids: ['gtceu:hydrogen 9000', 'gtceu:oxygen 15000']
+            id: 'shanhai:deconstruct/gtceu_fullers_earth_dust', inItem: '21x gtceu:fullers_earth_dust', inFluid: null,
+            outItems: ['4x gtceu:silicon_dust', '1x gtceu:magnesium_dust'],
+            outFluids: ['gtceu:oxygen 11004', 'gtceu:hydrogen 1008']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_pitchblende_dust', inItem: '1x gtceu:pitchblende_dust', inFluid: null,
@@ -3083,24 +2644,19 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:hydrogen 20000', 'gtceu:oxygen 14000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_trona_dust', inItem: '1x gtceu:trona_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_trona_dust', inItem: '16x gtceu:trona_dust', inFluid: null,
             outItems: ['3x gtceu:sodium_dust', '2x gtceu:carbon_dust'],
-            outFluids: ['gtceu:hydrogen 5000', 'gtceu:oxygen 8000']
+            outFluids: ['gtceu:oxygen 6002', 'gtceu:hydrogen 1004']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_gypsum_dust', inItem: '1x gtceu:gypsum_dust', inFluid: null,
-            outItems: ['1x gtceu:calcium_dust', '1x gtceu:sulfur_dust'],
-            outFluids: ['gtceu:hydrogen 4000', 'gtceu:oxygen 6000']
+            id: 'shanhai:deconstruct/gtceu_gypsum_dust', inItem: '4000x gtceu:gypsum_dust', inFluid: null,
+            outItems: ['500x gtceu:calcium_dust', '500x gtceu:sulfur_dust'],
+            outFluids: ['gtceu:oxygen 2001000', 'gtceu:hydrogen 2000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_zeolite_dust', inItem: '1x gtceu:zeolite_dust', inFluid: null,
             outItems: ['1x gtceu:sodium_dust', '4x gtceu:calcium_dust', '27x gtceu:silicon_dust', '9x gtceu:aluminium_dust'],
             outFluids: ['gtceu:hydrogen 56000', 'gtceu:oxygen 100000']
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_magnetic_steel_dust', inItem: '1x gtceu:magnetic_steel_dust', inFluid: null,
-            outItems: ['1x gtceu:magnetic_steel_dust'],
-            outFluids: []
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_vanadium_steel_dust', inItem: '1x gtceu:vanadium_steel_dust', inFluid: null,
@@ -3248,9 +2804,9 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_clay_dust', inItem: '1x gtceu:clay_dust', inFluid: null,
-            outItems: ['2x gtceu:sodium_dust', '1x gtceu:lithium_dust', '2x gtceu:aluminium_dust', '2x gtceu:silicon_dust'],
-            outFluids: ['gtceu:hydrogen 12000', 'gtceu:oxygen 6000']
+            id: 'shanhai:deconstruct/gtceu_clay_dust', inItem: '6500x gtceu:clay_dust', inFluid: null,
+            outItems: ['1000x gtceu:sodium_dust', '1000x gtceu:aluminium_dust', '1000x gtceu:silicon_dust', '500x gtceu:lithium_dust'],
+            outFluids: ['gtceu:hydrogen 6000', 'gtceu:oxygen 3000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_redstone_dust', inItem: '1x gtceu:redstone_dust', inFluid: null,
@@ -3283,9 +2839,9 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:hydrogen 6000', 'gtceu:oxygen 3000', 'gtceu:chlorine 1000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_electrotine_dust', inItem: '1x gtceu:electrotine_dust', inFluid: null,
-            outItems: ['1x gtceu:silicon_dust', '5x gtceu:iron_dust', '10x gtceu:sulfur_dust', '1x gtceu:chromium_dust', '2x gtceu:aluminium_dust', '1x gtceu:silver_dust', '1x gtceu:gold_dust'],
-            outFluids: ['gtceu:oxygen 3000', 'gtceu:mercury 3000']
+            id: 'shanhai:deconstruct/gtceu_electrotine_dust', inItem: '480x gtceu:electrotine_dust', inFluid: null,
+            outItems: ['30x gtceu:silver_dust', '30x gtceu:gold_dust', '20x gtceu:sulfur_dust', '10x gtceu:iron_dust', '6x gtceu:silicon_dust', '2x gtceu:aluminium_dust', '1x gtceu:chromium_dust'],
+            outFluids: ['gtceu:mercury 18000', 'gtceu:oxygen 3000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_ender_eye_dust', inItem: '1x gtceu:ender_eye_dust', inFluid: null,
@@ -3298,9 +2854,9 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:nitrogen 5000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_diatomite_dust', inItem: '1x gtceu:diatomite_dust', inFluid: null,
-            outItems: ['8x gtceu:silicon_dust', '2x gtceu:iron_dust', '2x gtceu:aluminium_dust'],
-            outFluids: ['gtceu:oxygen 22000']
+            id: 'shanhai:deconstruct/gtceu_diatomite_dust', inItem: '75x gtceu:diatomite_dust', inFluid: null,
+            outItems: ['20x gtceu:silicon_dust', '3x gtceu:iron_dust', '3x gtceu:aluminium_dust'],
+            outFluids: ['gtceu:oxygen 49000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_red_steel_dust', inItem: '1x gtceu:red_steel_dust', inFluid: null,
@@ -3323,9 +2879,9 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_basalt_dust', inItem: '1x gtceu:basalt_dust', inFluid: null,
-            outItems: ['2x gtceu:magnesium_dust', '1x gtceu:iron_dust', '10x gtceu:silicon_dust', '3x gtceu:calcium_dust', '7x gtceu:carbon_dust'],
-            outFluids: ['gtceu:oxygen 29000']
+            id: 'shanhai:deconstruct/gtceu_basalt_dust', inItem: '4800x gtceu:basalt_dust', inFluid: null,
+            outItems: ['840x gtceu:silicon_dust', '180x gtceu:calcium_dust', '180x gtceu:carbon_dust', '120x gtceu:magnesium_dust', '60x gtceu:iron_dust', '25x gtceu:germanium_dust'],
+            outFluids: ['gtceu:oxygen 2220000', 'gtceu:carbon 144000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_granitic_mineral_sand_dust', inItem: '1x gtceu:granitic_mineral_sand_dust', inFluid: null,
@@ -3338,8 +2894,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 8000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_garnet_sand_dust', inItem: '1x gtceu:garnet_sand_dust', inFluid: null,
-            outItems: ['8x gtceu:aluminium_dust', '5x gtceu:iron_dust', '18x gtceu:silicon_dust', '9x gtceu:calcium_dust', '3x gtceu:magnesium_dust', '3x gtceu:manganese_dust', '2x gtceu:chromium_dust'],
+            id: 'shanhai:deconstruct/gtceu_garnet_sand_dust', inItem: '120x gtceu:garnet_sand_dust', inFluid: null,
+            outItems: ['18x gtceu:silicon_dust', '9x gtceu:calcium_dust', '8x gtceu:aluminium_dust', '5x gtceu:iron_dust', '3x gtceu:magnesium_dust', '3x gtceu:manganese_dust', '2x gtceu:chromium_dust'],
             outFluids: ['gtceu:oxygen 72000']
         }
         ,{
@@ -3363,9 +2919,9 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 12000', 'gtceu:mercury 12000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_basaltic_mineral_sand_dust', inItem: '1x gtceu:basaltic_mineral_sand_dust', inFluid: null,
-            outItems: ['4x gtceu:iron_dust', '2x gtceu:magnesium_dust', '10x gtceu:silicon_dust', '3x gtceu:calcium_dust', '7x gtceu:carbon_dust'],
-            outFluids: ['gtceu:oxygen 33000']
+            id: 'shanhai:deconstruct/gtceu_basaltic_mineral_sand_dust', inItem: '67200x gtceu:basaltic_mineral_sand_dust', inFluid: null,
+            outItems: ['14820x gtceu:iron_dust', '5880x gtceu:silicon_dust', '1260x gtceu:calcium_dust', '1260x gtceu:carbon_dust', '840x gtceu:magnesium_dust', '175x gtceu:germanium_dust'],
+            outFluids: ['gtceu:oxygen 34740000', 'gtceu:carbon 1008000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_hsse_dust', inItem: '1x gtceu:hsse_dust', inFluid: null,
@@ -3548,16 +3104,6 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_infused_gold_dust', inItem: '1x gtceu:infused_gold_dust', inFluid: null,
-            outItems: ['1x gtceu:infused_gold_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_thaumium_dust', inItem: '1x gtceu:thaumium_dust', inFluid: null,
-            outItems: ['1x gtceu:thaumium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_astral_silver_dust', inItem: '1x gtceu:astral_silver_dust', inFluid: null,
             outItems: ['2x gtceu:silver_dust', '1x gtceu:infused_gold_dust'],
             outFluids: []
@@ -3568,24 +3114,19 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_pulsating_alloy_dust', inItem: '1x gtceu:pulsating_alloy_dust', inFluid: null,
-            outItems: ['1x gtceu:pulsating_alloy_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_conductive_alloy_dust', inItem: '1x gtceu:conductive_alloy_dust', inFluid: null,
             outItems: ['6x gtceu:iron_dust', '1x gtceu:silicon_dust', '10x gtceu:sulfur_dust', '1x gtceu:chromium_dust', '2x gtceu:aluminium_dust'],
             outFluids: ['gtceu:oxygen 3000', 'gtceu:mercury 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_celestine_dust', inItem: '1x gtceu:celestine_dust', inFluid: null,
+            id: 'shanhai:deconstruct/gtceu_celestine_dust', inItem: '6x gtceu:celestine_dust', inFluid: null,
             outItems: ['1x gtceu:strontium_dust', '1x gtceu:sulfur_dust'],
             outFluids: ['gtceu:oxygen 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_zircon_dust', inItem: '1x gtceu:zircon_dust', inFluid: null,
-            outItems: ['1x gtceu:zirconium_dust', '1x gtceu:silicon_dust'],
-            outFluids: ['gtceu:oxygen 4000']
+            id: 'shanhai:deconstruct/gtceu_zircon_dust', inItem: '30x gtceu:zircon_dust', inFluid: null,
+            outItems: ['5x gtceu:zirconium_dust', '5x gtceu:silicon_dust', '3x gtceu:hafnium_dust'],
+            outFluids: ['gtceu:oxygen 20000']
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_bismuth_tellurite_dust', inItem: '1x gtceu:bismuth_tellurite_dust', inFluid: null,
@@ -3608,28 +3149,13 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 32000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_adamantium_dust', inItem: '1x gtceu:adamantium_dust', inFluid: null,
-            outItems: ['1x gtceu:adamantium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_adamantium_fluid', inItem: null, inFluid: 'gtceu:adamantium 1000',
             outItems: ['1x gtceu:adamantium_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_quantanium_dust', inItem: '1x gtceu:quantanium_dust', inFluid: null,
-            outItems: ['1x gtceu:quantanium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_quantanium_fluid', inItem: null, inFluid: 'gtceu:quantanium 1000',
             outItems: ['1x gtceu:quantanium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_vibranium_dust', inItem: '1x gtceu:vibranium_dust', inFluid: null,
-            outItems: ['1x gtceu:vibranium_dust'],
             outFluids: []
         }
         ,{
@@ -3668,18 +3194,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_draconium_dust', inItem: '1x gtceu:draconium_dust', inFluid: null,
-            outItems: ['1x gtceu:draconium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_draconium_fluid', inItem: null, inFluid: 'gtceu:draconium 1000',
             outItems: ['1x gtceu:draconium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_chaos_dust', inItem: '1x gtceu:chaos_dust', inFluid: null,
-            outItems: ['1x gtceu:chaos_dust'],
             outFluids: []
         }
         ,{
@@ -3688,18 +3204,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_hypogen_dust', inItem: '1x gtceu:hypogen_dust', inFluid: null,
-            outItems: ['1x gtceu:hypogen_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_hypogen_fluid', inItem: null, inFluid: 'gtceu:hypogen 1000',
             outItems: ['1x gtceu:hypogen_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_shirabon_dust', inItem: '1x gtceu:shirabon_dust', inFluid: null,
-            outItems: ['1x gtceu:shirabon_dust'],
             outFluids: []
         }
         ,{
@@ -3708,18 +3214,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_mithril_dust', inItem: '1x gtceu:mithril_dust', inFluid: null,
-            outItems: ['1x gtceu:mithril_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_mithril_fluid', inItem: null, inFluid: 'gtceu:mithril 1000',
             outItems: ['1x gtceu:mithril_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_taranium_dust', inItem: '1x gtceu:taranium_dust', inFluid: null,
-            outItems: ['1x gtceu:taranium_dust'],
             outFluids: []
         }
         ,{
@@ -3728,18 +3224,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_crystalmatrix_dust', inItem: '1x gtceu:crystalmatrix_dust', inFluid: null,
-            outItems: ['1x gtceu:crystalmatrix_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_crystalmatrix_fluid', inItem: null, inFluid: 'gtceu:crystalmatrix 1000',
             outItems: ['1x gtceu:crystalmatrix_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_cosmicneutronium_dust', inItem: '1x gtceu:cosmicneutronium_dust', inFluid: null,
-            outItems: ['1x gtceu:cosmicneutronium_dust'],
             outFluids: []
         }
         ,{
@@ -3748,18 +3234,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_echoite_dust', inItem: '1x gtceu:echoite_dust', inFluid: null,
-            outItems: ['1x gtceu:echoite_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_echoite_fluid', inItem: null, inFluid: 'gtceu:echoite 1000',
             outItems: ['1x gtceu:echoite_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_legendarium_dust', inItem: '1x gtceu:legendarium_dust', inFluid: null,
-            outItems: ['1x gtceu:legendarium_dust'],
             outFluids: []
         }
         ,{
@@ -3768,18 +3244,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_draconiumawakened_dust', inItem: '1x gtceu:draconiumawakened_dust', inFluid: null,
-            outItems: ['1x gtceu:draconiumawakened_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_draconiumawakened_fluid', inItem: null, inFluid: 'gtceu:draconiumawakened 1000',
             outItems: ['1x gtceu:draconiumawakened_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_adamantine_dust', inItem: '1x gtceu:adamantine_dust', inFluid: null,
-            outItems: ['1x gtceu:adamantine_dust'],
             outFluids: []
         }
         ,{
@@ -3788,18 +3254,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_starmetal_dust', inItem: '1x gtceu:starmetal_dust', inFluid: null,
-            outItems: ['1x gtceu:starmetal_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_starmetal_fluid', inItem: null, inFluid: 'gtceu:starmetal 1000',
             outItems: ['1x gtceu:starmetal_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_orichalcum_dust', inItem: '1x gtceu:orichalcum_dust', inFluid: null,
-            outItems: ['1x gtceu:orichalcum_dust'],
             outFluids: []
         }
         ,{
@@ -3808,18 +3264,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_infuscolium_dust', inItem: '1x gtceu:infuscolium_dust', inFluid: null,
-            outItems: ['1x gtceu:infuscolium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_infuscolium_fluid', inItem: null, inFluid: 'gtceu:infuscolium 1000',
             outItems: ['1x gtceu:infuscolium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_enderium_dust', inItem: '1x gtceu:enderium_dust', inFluid: null,
-            outItems: ['1x gtceu:enderium_dust'],
             outFluids: []
         }
         ,{
@@ -3828,18 +3274,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_eternity_dust', inItem: '1x gtceu:eternity_dust', inFluid: null,
-            outItems: ['1x gtceu:eternity_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_eternity_fluid', inItem: null, inFluid: 'gtceu:eternity 1000',
             outItems: ['1x gtceu:eternity_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_magmatter_dust', inItem: '1x gtceu:magmatter_dust', inFluid: null,
-            outItems: ['1x gtceu:magmatter_dust'],
             outFluids: []
         }
         ,{
@@ -3848,18 +3284,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_degenerate_rhenium_dust', inItem: '1x gtceu:degenerate_rhenium_dust', inFluid: null,
-            outItems: ['1x gtceu:degenerate_rhenium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_degenerate_rhenium_fluid', inItem: null, inFluid: 'gtceu:liquid_degenerate_rhenium 1000',
             outItems: ['1x gtceu:degenerate_rhenium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_heavy_quark_degenerate_matter_dust', inItem: '1x gtceu:heavy_quark_degenerate_matter_dust', inFluid: null,
-            outItems: ['1x gtceu:heavy_quark_degenerate_matter_dust'],
             outFluids: []
         }
         ,{
@@ -3893,18 +3319,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_metastable_oganesson_dust', inItem: '1x gtceu:metastable_oganesson_dust', inFluid: null,
-            outItems: ['1x gtceu:metastable_oganesson_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_metastable_oganesson_fluid', inItem: null, inFluid: 'gtceu:metastable_oganesson 1000',
             outItems: ['1x gtceu:metastable_oganesson_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_quantumchromodynamically_confined_matter_dust', inItem: '1x gtceu:quantumchromodynamically_confined_matter_dust', inFluid: null,
-            outItems: ['1x gtceu:quantumchromodynamically_confined_matter_dust'],
             outFluids: []
         }
         ,{
@@ -3913,18 +3329,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_transcendentmetal_dust', inItem: '1x gtceu:transcendentmetal_dust', inFluid: null,
-            outItems: ['1x gtceu:transcendentmetal_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_transcendentmetal_fluid', inItem: null, inFluid: 'gtceu:transcendentmetal 1000',
             outItems: ['1x gtceu:transcendentmetal_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_uruium_dust', inItem: '1x gtceu:uruium_dust', inFluid: null,
-            outItems: ['1x gtceu:uruium_dust'],
             outFluids: []
         }
         ,{
@@ -3933,18 +3339,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_magnetohydrodynamicallyconstrainedstarmatter_dust', inItem: '1x gtceu:magnetohydrodynamicallyconstrainedstarmatter_dust', inFluid: null,
-            outItems: ['1x gtceu:magnetohydrodynamicallyconstrainedstarmatter_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_magnetohydrodynamicallyconstrainedstarmatter_fluid', inItem: null, inFluid: 'gtceu:magnetohydrodynamicallyconstrainedstarmatter 1000',
             outItems: ['1x gtceu:magnetohydrodynamicallyconstrainedstarmatter_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_white_dwarf_mtter_dust', inItem: '1x gtceu:white_dwarf_mtter_dust', inFluid: null,
-            outItems: ['1x gtceu:white_dwarf_mtter_dust'],
             outFluids: []
         }
         ,{
@@ -3953,28 +3349,13 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_black_dwarf_mtter_dust', inItem: '1x gtceu:black_dwarf_mtter_dust', inFluid: null,
-            outItems: ['1x gtceu:black_dwarf_mtter_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_black_dwarf_mtter_fluid', inItem: null, inFluid: 'gtceu:black_dwarf_mtter 1000',
             outItems: ['1x gtceu:black_dwarf_mtter_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_astraltitanium_dust', inItem: '1x gtceu:astraltitanium_dust', inFluid: null,
-            outItems: ['1x gtceu:astraltitanium_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_astraltitanium_fluid', inItem: null, inFluid: 'gtceu:astraltitanium 1000',
             outItems: ['1x gtceu:astraltitanium_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_celestialtungsten_dust', inItem: '1x gtceu:celestialtungsten_dust', inFluid: null,
-            outItems: ['1x gtceu:celestialtungsten_dust'],
             outFluids: []
         }
         ,{
@@ -4403,16 +3784,6 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:hydrogen 6000', 'gtceu:nitrogen 2000', 'gtceu:oxygen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_purified_tengam_dust', inItem: '1x gtceu:purified_tengam_dust', inFluid: null,
-            outItems: ['1x gtceu:purified_tengam_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_attuned_tengam_dust', inItem: '1x gtceu:attuned_tengam_dust', inFluid: null,
-            outItems: ['1x gtceu:attuned_tengam_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_pre_zylon_dust', inItem: '1x gtceu:pre_zylon_dust', inFluid: null,
             outItems: ['20x gtceu:carbon_dust'],
             outFluids: ['gtceu:hydrogen 22000', 'gtceu:nitrogen 2000', 'gtceu:oxygen 2000']
@@ -4426,16 +3797,6 @@ ServerEvents.recipes(function (event) {
             id: 'shanhai:deconstruct/gtceu_sodium_oxide_dust', inItem: '1x gtceu:sodium_oxide_dust', inFluid: null,
             outItems: ['2x gtceu:sodium_dust'],
             outFluids: ['gtceu:oxygen 1000']
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_germanium_containing_precipitate_dust', inItem: '1x gtceu:germanium_containing_precipitate_dust', inFluid: null,
-            outItems: ['1x gtceu:germanium_containing_precipitate_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_germanium_ash_dust', inItem: '1x gtceu:germanium_ash_dust', inFluid: null,
-            outItems: ['1x gtceu:germanium_ash_dust'],
-            outFluids: []
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_germanium_dioxide_dust', inItem: '1x gtceu:germanium_dioxide_dust', inFluid: null,
@@ -4866,11 +4227,6 @@ ServerEvents.recipes(function (event) {
             id: 'shanhai:deconstruct/gtceu_titanium_tetrafluoride_fluid', inItem: null, inFluid: 'gtceu:titanium_tetrafluoride 1000',
             outItems: ['1x gtceu:titanium_dust'],
             outFluids: ['gtceu:fluorine 4000']
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_titanium_50_dust', inItem: '1x gtceu:titanium_50_dust', inFluid: null,
-            outItems: ['1x gtceu:titanium_50_dust'],
-            outFluids: []
         }
         ,{
             id: 'shanhai:deconstruct/gtceu_titanium_50_fluid', inItem: null, inFluid: 'gtceu:titanium_50 1000',
@@ -5493,16 +4849,6 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 2000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_graphene_gel_suspension_dust', inItem: '1x gtceu:graphene_gel_suspension_dust', inFluid: null,
-            outItems: ['1x gtceu:graphene_gel_suspension_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_dry_graphene_gel_dust', inItem: '1x gtceu:dry_graphene_gel_dust', inFluid: null,
-            outItems: ['1x gtceu:dry_graphene_gel_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_supercritical_carbon_dioxide_fluid', inItem: null, inFluid: 'gtceu:supercritical_carbon_dioxide 1000',
             outItems: ['1x gtceu:carbon_dust'],
             outFluids: ['gtceu:oxygen 2000']
@@ -5853,11 +5199,6 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_copper76_dust', inItem: '1x gtceu:copper76_dust', inFluid: null,
-            outItems: ['1x gtceu:copper76_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_cadmium_sulfide_dust', inItem: '1x gtceu:cadmium_sulfide_dust', inFluid: null,
             outItems: ['1x gtceu:cadmium_dust', '1x gtceu:sulfur_dust'],
             outFluids: []
@@ -6153,18 +5494,8 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:oxygen 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_spacetime_dust', inItem: '1x gtceu:spacetime_dust', inFluid: null,
-            outItems: ['1x gtceu:spacetime_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_spacetime_fluid', inItem: null, inFluid: 'gtceu:spacetime 1000',
             outItems: ['1x gtceu:spacetime_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_infinity_dust', inItem: '1x gtceu:infinity_dust', inFluid: null,
-            outItems: ['1x gtceu:infinity_dust'],
             outFluids: []
         }
         ,{
@@ -6173,8 +5504,8 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_trinium_compound_dust', inItem: '1x gtceu:trinium_compound_dust', inFluid: null,
-            outItems: ['3x gtceu:trinium_dust', '3x gtceu:actinium_dust', '4x gtceu:selenium_dust', '4x gtceu:astatine_dust'],
+            id: 'shanhai:deconstruct/gtceu_trinium_compound_dust', inItem: '9x gtceu:trinium_compound_dust', inFluid: null,
+            outItems: ['8x gtceu:selenium_dust', '8x gtceu:astatine_dust', '9x gtceu:trinium_dust', '9x gtceu:actinium_dust'],
             outFluids: []
         }
         ,{
@@ -6538,11 +5869,6 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:chlorine 4000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_phosphorus_free_samarium_concentrate_powder_dust', inItem: '1x gtceu:phosphorus_free_samarium_concentrate_powder_dust', inFluid: null,
-            outItems: ['1x gtceu:phosphorus_free_samarium_concentrate_powder_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_samarium_chloride_concentrate_solution_fluid', inItem: null, inFluid: 'gtceu:samarium_chloride_concentrate_solution 1000',
             outItems: ['1x gtceu:samarium_dust'],
             outFluids: ['gtceu:chlorine 3000', 'gtceu:hydrogen 10000', 'gtceu:oxygen 5000']
@@ -6583,28 +5909,13 @@ ServerEvents.recipes(function (event) {
             outFluids: ['gtceu:hydrogen 36000', 'gtceu:oxygen 3000']
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_tear_dust', inItem: '1x gtceu:tear_dust', inFluid: null,
-            outItems: ['1x gtceu:tear_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_tear_fluid', inItem: null, inFluid: 'gtceu:tear 1000',
             outItems: ['1x gtceu:tear_dust'],
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtceu_instability_dust', inItem: '1x gtceu:instability_dust', inFluid: null,
-            outItems: ['1x gtceu:instability_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtceu_instability_fluid', inItem: null, inFluid: 'gtceu:instability 1000',
             outItems: ['1x gtceu:instability_dust'],
-            outFluids: []
-        }
-        ,{
-            id: 'shanhai:deconstruct/gtceu_celestial_secret_dust', inItem: '1x gtceu:celestial_secret_dust', inFluid: null,
-            outItems: ['1x gtceu:celestial_secret_dust'],
             outFluids: []
         }
         ,{
@@ -6633,15 +5944,12 @@ ServerEvents.recipes(function (event) {
             outFluids: []
         }
         ,{
-            id: 'shanhai:deconstruct/gtladditions_creon_dust', inItem: '1x gtladditions:creon_dust', inFluid: null,
-            outItems: ['1x gtladditions:creon_dust'],
-            outFluids: []
-        }
-        ,{
             id: 'shanhai:deconstruct/gtladditions_creon_fluid', inItem: null, inFluid: 'gtladditions:creon 1000',
             outItems: ['1x gtladditions:creon_dust'],
             outFluids: []
         }
+    // 🔴 本批 1147 条里，有 91 条的数值来自【矿物粉全链产率】（用户 2026-09-30 拍板 B）
+    //    其余保持化学式口径（要么闸门未通过、要么就是元素单质自身 1:1）
     ]
     var applySet = function (sym, v) {
         var mid = SYM2MAT[sym] || ('gtceu:' + sym);
@@ -6675,7 +5983,194 @@ ServerEvents.recipes(function (event) {
             if (ShanhaiStats) ShanhaiStats.addResult(true)
         } catch (e) { bad = bad + 1; if (errList.length < 1500) { errList = errList + J.id + ' => ' + e + ' | ' } ; if (ShanhaiStats) ShanhaiStats.addResult(false) }
     }
-    console.info('[SHANHAI-DECON] jobs=' + JOBS.length + ' => ok=' + ok + ' failed=' + bad + ' EUt=32')
+    // 🔴 可 grep 的证据行：每条被覆盖（数值来自全链产率 / 深度化学扭曲仪配比）的解构配方
+    var OV_EV = {
+        'shanhai:deconstruct/gtceu_almandine_dust': '铁铝榴石粉 输入=20x gtceu:almandine_dust 产出=铁粉×3、硅粉×3、铝粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、铁粉 0.15、硅粉 0.15、铝粉 0.1'
+        ,'shanhai:deconstruct/gtceu_alunite_dust': '明矾石粉 输入=26x gtceu:alunite_dust 产出=铝粉×3、硅粉×2、钾粉×1、氧 14000mB、氢 6000mB | 来源=全链产率 | 每1粉=氧 0.538462、氢 0.230769、铝粉 0.115385、硅粉 0.076923、钾粉 0.038462'
+        ,'shanhai:deconstruct/gtceu_amethyst_dust': '紫水晶粉 输入=15x gtceu:amethyst_dust 产出=硅粉×4、铁粉×3、氧 8000mB | 来源=全链产率 | 每1粉=氧 0.533333、硅粉 0.266667、铁粉 0.2'
+        ,'shanhai:deconstruct/gtceu_andradite_dust': '钙铁榴石粉 输入=20x gtceu:andradite_dust 产出=钙粉×3、硅粉×3、铁粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、钙粉 0.15、硅粉 0.15、铁粉 0.1'
+        ,'shanhai:deconstruct/gtceu_antimony_trioxide_dust': '三氧化二锑粉 输入=5x gtceu:antimony_trioxide_dust 产出=锑粉×2、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、锑粉 0.4'
+        ,'shanhai:deconstruct/gtceu_asbestos_dust': '石棉粉 输入=18x gtceu:asbestos_dust 产出=镁粉×3、硅粉×2、氧 9000mB、氢 4000mB | 来源=全链产率 | 每1粉=氧 0.5、氢 0.222222、镁粉 0.166667、硅粉 0.111111'
+        ,'shanhai:deconstruct/gtceu_barite_dust': '重晶石粉 输入=6x gtceu:barite_dust 产出=钡粉×1、硫粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.666667、钡粉 0.166667、硫粉 0.166667'
+        ,'shanhai:deconstruct/gtceu_basalt_dust': '玄武岩粉 输入=4800x gtceu:basalt_dust 产出=硅粉×840、钙粉×180、碳粉×180、镁粉×120、铁粉×60、锗粉×25、氧 2220000mB、碳 144000mB | 来源=全链产率 | 每1粉=氧 0.4625、硅粉 0.175、钙粉 0.0375、碳粉 0.0375、碳 0.03、镁粉 0.025、铁粉 0.0125、锗粉 0.005208'
+        ,'shanhai:deconstruct/gtceu_basaltic_mineral_sand_dust': '玄武岩矿砂粉 输入=67200x gtceu:basaltic_mineral_sand_dust 产出=铁粉×14820、硅粉×5880、钙粉×1260、碳粉×1260、镁粉×840、锗粉×175、氧 34740000mB、碳 1008000mB | 来源=全链产率 | 每1粉=氧 0.516964、铁粉 0.220536、硅粉 0.0875、钙粉 0.01875、碳粉 0.01875、碳 0.015、镁粉 0.0125、锗粉 0.002604'
+        ,'shanhai:deconstruct/gtceu_bauxite_dust': '铝土矿粉 输入=15x gtceu:bauxite_dust 产出=铝粉×6、钛粉×1、氧 11000mB | 来源=全链产率 | 每1粉=氧 0.733333、铝粉 0.4、钛粉 0.066667'
+        ,'shanhai:deconstruct/gtceu_bentonite_dust': '膨润土粉 输入=6000x gtceu:bentonite_dust 产出=硅粉×2400、镁粉×1200、钠粉×200、氢 1202000mB、氧 1000mB | 来源=全链产率 | 每1粉=硅粉 0.4、氢 0.200333、镁粉 0.2、钠粉 0.033333、氧 0.000167'
+        ,'shanhai:deconstruct/gtceu_blue_topaz_dust': '蓝黄玉粉 输入=13x gtceu:blue_topaz_dust 产出=铝粉×2、硅粉×1、氧 6000mB、氟 2000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.461538、铝粉 0.153846、氟 0.153846、氢 0.153846、硅粉 0.076923'
+        ,'shanhai:deconstruct/gtceu_borax_dust': '硼砂粉 输入=2300x gtceu:borax_dust 产出=硼粉×400、钠粉×200、氧 701000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.304783、硼粉 0.173913、钠粉 0.086957、氢 0.00087'
+        ,'shanhai:deconstruct/gtceu_bornite_dust': '斑铜矿粉 输入=10x gtceu:bornite_dust 产出=铜粉×5、硫粉×4、铁粉×1 | 来源=全链产率 | 每1粉=铜粉 0.5、硫粉 0.4、铁粉 0.1'
+        ,'shanhai:deconstruct/gtceu_calcite_dust': '方解石粉 输入=5x gtceu:calcite_dust 产出=钙粉×1、碳粉×1、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、钙粉 0.2、碳粉 0.2'
+        ,'shanhai:deconstruct/gtceu_cassiterite_dust': '锡石粉 输入=3x gtceu:cassiterite_dust 产出=锡粉×1、氧 2000mB | 来源=全链产率 | 每1粉=氧 0.666667、锡粉 0.333333'
+        ,'shanhai:deconstruct/gtceu_cassiterite_sand_dust': '锡石矿砂粉 输入=3x gtceu:cassiterite_sand_dust 产出=锡粉×1、氧 2000mB | 来源=全链产率 | 每1粉=氧 0.666667、锡粉 0.333333'
+        ,'shanhai:deconstruct/gtceu_celestine_dust': '天青石粉 输入=6x gtceu:celestine_dust 产出=锶粉×1、硫粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.666667、锶粉 0.166667、硫粉 0.166667'
+        ,'shanhai:deconstruct/gtceu_chalcocite_dust': '辉铜矿粉 输入=3x gtceu:chalcocite_dust 产出=铜粉×2、硫粉×1 | 来源=全链产率 | 每1粉=铜粉 0.666667、硫粉 0.333333'
+        ,'shanhai:deconstruct/gtceu_chalcopyrite_dust': '黄铜矿粉 输入=4x gtceu:chalcopyrite_dust 产出=硫粉×2、铜粉×1、铁粉×1 | 来源=全链产率 | 每1粉=硫粉 0.5、铜粉 0.25、铁粉 0.25'
+        ,'shanhai:deconstruct/gtceu_chromite_dust': '铬铁矿粉 输入=7x gtceu:chromite_dust 产出=铬粉×2、铁粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.571429、铬粉 0.285714、铁粉 0.142857'
+        ,'shanhai:deconstruct/gtceu_cinnabar_dust': '朱砂粉 输入=2x gtceu:cinnabar_dust 产出=硫粉×1、汞 1000mB | 来源=全链产率 | 每1粉=硫粉 0.5、汞 0.5'
+        ,'shanhai:deconstruct/gtceu_clay_dust': '黏土粉 输入=6500x gtceu:clay_dust 产出=钠粉×1000、铝粉×1000、硅粉×1000、锂粉×500、氢 6000mB、氧 3000mB | 来源=全链产率 | 每1粉=钠粉 0.153846、铝粉 0.153846、硅粉 0.153846、锂粉 0.076923、氢 0.000923、氧 0.000462'
+        ,'shanhai:deconstruct/gtceu_coal_dust': '煤炭粉 输入=1x gtceu:coal_dust 产出=碳粉×2 | 来源=全链产率 | 每1粉=碳粉 2'
+        ,'shanhai:deconstruct/gtceu_cobalt_oxide_dust': '氧化钴粉 输入=2x gtceu:cobalt_oxide_dust 产出=钴粉×1、氧 1000mB | 来源=全链产率 | 每1粉=钴粉 0.5、氧 0.5'
+        ,'shanhai:deconstruct/gtceu_cobaltite_dust': '辉钴矿粉 输入=3x gtceu:cobaltite_dust 产出=钴粉×1、砷粉×1、硫粉×1 | 来源=全链产率 | 每1粉=钴粉 0.333333、砷粉 0.333333、硫粉 0.333333'
+        ,'shanhai:deconstruct/gtceu_diatomite_dust': '硅藻土粉 输入=75x gtceu:diatomite_dust 产出=硅粉×20、铁粉×3、铝粉×3、氧 49000mB | 来源=全链产率 | 每1粉=氧 0.653333、硅粉 0.266667、铁粉 0.04、铝粉 0.04'
+        ,'shanhai:deconstruct/gtceu_electrotine_dust': '蓝石粉 输入=480x gtceu:electrotine_dust 产出=银粉×30、金粉×30、硫粉×20、铁粉×10、硅粉×6、铝粉×2、铬粉×1、汞 18000mB、氧 3000mB | 来源=全链产率 | 每1粉=银粉 0.0625、金粉 0.0625、硫粉 0.041667、汞 0.0375、铁粉 0.020833、硅粉 0.0125、氧 0.00625、铝粉 0.004167、铬粉 0.002083'
+        ,'shanhai:deconstruct/gtceu_electrum_dust': '琥珀金粉 输入=2x gtceu:electrum_dust 产出=银粉×1、金粉×1 | 来源=全链产率 | 每1粉=银粉 0.5、金粉 0.5'
+        ,'shanhai:deconstruct/gtceu_emerald_dust': '绿宝石粉 输入=29x gtceu:emerald_dust 产出=硅粉×6、铍粉×3、铝粉×2、氧 18000mB | 来源=全链产率 | 每1粉=氧 0.62069、硅粉 0.206897、铍粉 0.103448、铝粉 0.068966'
+        ,'shanhai:deconstruct/gtceu_ender_pearl_dust': '末影珍珠粉 输入=10x gtceu:ender_pearl_dust 产出=钾粉×4、铍粉×1、氮 5000mB | 来源=全链产率 | 每1粉=氮 0.5、钾粉 0.4、铍粉 0.1'
+        ,'shanhai:deconstruct/gtceu_fullers_earth_dust': '漂白土粉 输入=21x gtceu:fullers_earth_dust 产出=硅粉×4、镁粉×1、氧 11004mB、氢 1008mB | 来源=全链产率 | 每1粉=氧 0.524、硅粉 0.190476、氢 0.048、镁粉 0.047619'
+        ,'shanhai:deconstruct/gtceu_galena_dust': '方铅矿粉 输入=2x gtceu:galena_dust 产出=铅粉×1、硫粉×1 | 来源=全链产率 | 每1粉=铅粉 0.5、硫粉 0.5'
+        ,'shanhai:deconstruct/gtceu_garnet_sand_dust': '石榴石砂粉 输入=120x gtceu:garnet_sand_dust 产出=硅粉×18、钙粉×9、铝粉×8、铁粉×5、镁粉×3、锰粉×3、铬粉×2、氧 72000mB | 来源=全链产率 | 每1粉=氧 0.6、硅粉 0.15、钙粉 0.075、铝粉 0.066667、铁粉 0.041667、镁粉 0.025、锰粉 0.025、铬粉 0.016667'
+        ,'shanhai:deconstruct/gtceu_garnierite_dust': '硅镁镍矿粉 输入=2x gtceu:garnierite_dust 产出=镍粉×1、氧 1000mB | 来源=全链产率 | 每1粉=镍粉 0.5、氧 0.5'
+        ,'shanhai:deconstruct/gtceu_glauconite_sand_dust': '海绿石砂粉 输入=21x gtceu:glauconite_sand_dust 产出=铝粉×4、镁粉×2、钾粉×1、氧 12000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.571429、铝粉 0.190476、镁粉 0.095238、氢 0.095238、钾粉 0.047619'
+        ,'shanhai:deconstruct/gtceu_goethite_dust': '针铁矿粉 输入=4x gtceu:goethite_dust 产出=铁粉×1、氧 2000mB、氢 1000mB | 来源=全链产率 | 每1粉=氧 0.5、铁粉 0.25、氢 0.25'
+        ,'shanhai:deconstruct/gtceu_graphite_dust': '石墨粉 输入=1x gtceu:graphite_dust 产出=碳粉×4 | 来源=全链产率 | 每1粉=碳粉 4'
+        ,'shanhai:deconstruct/gtceu_green_sapphire_dust': '绿色蓝宝石粉 输入=5x gtceu:green_sapphire_dust 产出=铝粉×2、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、铝粉 0.4'
+        ,'shanhai:deconstruct/gtceu_grossular_dust': '钙铝榴石粉 输入=20x gtceu:grossular_dust 产出=钙粉×3、硅粉×3、铝粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、钙粉 0.15、硅粉 0.15、铝粉 0.1'
+        ,'shanhai:deconstruct/gtceu_gypsum_dust': '石膏粉 输入=4000x gtceu:gypsum_dust 产出=钙粉×500、硫粉×500、氧 2001000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.50025、钙粉 0.125、硫粉 0.125、氢 0.0005'
+        ,'shanhai:deconstruct/gtceu_hematite_dust': '赤铁矿粉 输入=5x gtceu:hematite_dust 产出=铁粉×2、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、铁粉 0.4'
+        ,'shanhai:deconstruct/gtceu_ilmenite_dust': '钛铁矿粉 输入=5x gtceu:ilmenite_dust 产出=钛粉×2、铁粉×1、氧 6000mB | 来源=全链产率 | 每1粉=氧 1.2、钛粉 0.4、铁粉 0.2'
+        ,'shanhai:deconstruct/gtceu_kyanite_dust': '蓝晶石粉 输入=8x gtceu:kyanite_dust 产出=铝粉×2、硅粉×1、氧 5000mB | 来源=全链产率 | 每1粉=氧 0.625、铝粉 0.25、硅粉 0.125'
+        ,'shanhai:deconstruct/gtceu_lazurite_dust': '蓝金石粉 输入=14x gtceu:lazurite_dust 产出=钙粉×4、钠粉×4、铝粉×3、硅粉×3 | 来源=全链产率 | 每1粉=钙粉 0.285714、钠粉 0.285714、铝粉 0.214286、硅粉 0.214286'
+        ,'shanhai:deconstruct/gtceu_lepidolite_dust': '锂云母粉 输入=20x gtceu:lepidolite_dust 产出=铝粉×4、锂粉×3、钾粉×1、氧 10000mB、氟 2000mB | 来源=全链产率 | 每1粉=氧 0.5、铝粉 0.2、锂粉 0.15、氟 0.1、钾粉 0.05'
+        ,'shanhai:deconstruct/gtceu_magnesite_dust': '菱镁矿粉 输入=5x gtceu:magnesite_dust 产出=镁粉×1、碳粉×1、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、镁粉 0.2、碳粉 0.2'
+        ,'shanhai:deconstruct/gtceu_magnetite_dust': '磁铁矿粉 输入=7x gtceu:magnetite_dust 产出=铁粉×3、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.571429、铁粉 0.428571'
+        ,'shanhai:deconstruct/gtceu_malachite_dust': '孔雀石粉 输入=10x gtceu:malachite_dust 产出=铜粉×2、碳粉×1、氧 5000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.5、铜粉 0.2、氢 0.2、碳粉 0.1'
+        ,'shanhai:deconstruct/gtceu_massicot_dust': '铅黄粉 输入=2x gtceu:massicot_dust 产出=铅粉×1、氧 1000mB | 来源=全链产率 | 每1粉=铅粉 0.5、氧 0.5'
+        ,'shanhai:deconstruct/gtceu_mica_dust': '云母粉 输入=19x gtceu:mica_dust 产出=铝粉×3、硅粉×3、钾粉×1、氧 10000mB、氟 2000mB | 来源=全链产率 | 每1粉=氧 0.526316、铝粉 0.157895、硅粉 0.157895、氟 0.105263、钾粉 0.052632'
+        ,'shanhai:deconstruct/gtceu_molybdenite_dust': '辉钼矿粉 输入=3x gtceu:molybdenite_dust 产出=铼粉×3、金粉×1、钼粉×1 | 来源=扭曲仪配比 | 每1粉=铼粉 1、金粉 0.333333、钼粉 0.333333'
+        ,'shanhai:deconstruct/gtceu_olivine_dust': '橄榄石粉 输入=15x gtceu:olivine_dust 产出=镁粉×6、铁粉×3、硅粉×2、氧 4000mB | 来源=全链产率 | 每1粉=镁粉 0.4、氧 0.266667、铁粉 0.2、硅粉 0.133333'
+        ,'shanhai:deconstruct/gtceu_opal_dust': '猫眼石粉 输入=3x gtceu:opal_dust 产出=硅粉×1、氧 2000mB | 来源=全链产率 | 每1粉=氧 0.666667、硅粉 0.333333'
+        ,'shanhai:deconstruct/gtceu_pentlandite_dust': '镍黄铁矿粉 输入=17x gtceu:pentlandite_dust 产出=镍粉×9、硫粉×8 | 来源=全链产率 | 每1粉=镍粉 0.529412、硫粉 0.470588'
+        ,'shanhai:deconstruct/gtceu_phosphate_dust': '磷酸盐粉 输入=5x gtceu:phosphate_dust 产出=磷粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.8、磷粉 0.2'
+        ,'shanhai:deconstruct/gtceu_pollucite_dust': '铯榴石粉 输入=11000x gtceu:pollucite_dust 产出=硅粉×2000、铯粉×1000、铝粉×1000、氧 6001000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.545545、硅粉 0.181818、铯粉 0.090909、铝粉 0.090909、氢 0.000182'
+        ,'shanhai:deconstruct/gtceu_powellite_dust': '钼钙矿粉 输入=6x gtceu:powellite_dust 产出=钙粉×1、钼粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.666667、钙粉 0.166667、钼粉 0.166667'
+        ,'shanhai:deconstruct/gtceu_pyrite_dust': '黄铁矿粉 输入=3x gtceu:pyrite_dust 产出=硫粉×2、铁粉×1 | 来源=全链产率 | 每1粉=硫粉 0.666667、铁粉 0.333333'
+        ,'shanhai:deconstruct/gtceu_pyrochlore_dust': '烧绿石粉 输入=11x gtceu:pyrochlore_dust 产出=钙粉×2、铌粉×2、氧 7000mB | 来源=全链产率 | 每1粉=氧 0.636364、钙粉 0.181818、铌粉 0.181818'
+        ,'shanhai:deconstruct/gtceu_pyrolusite_dust': '软锰矿粉 输入=3x gtceu:pyrolusite_dust 产出=锰粉×1、氧 2000mB | 来源=全链产率 | 每1粉=氧 0.666667、锰粉 0.333333'
+        ,'shanhai:deconstruct/gtceu_pyrope_dust': '镁铝榴石粉 输入=20x gtceu:pyrope_dust 产出=镁粉×3、硅粉×3、铝粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、镁粉 0.15、硅粉 0.15、铝粉 0.1'
+        ,'shanhai:deconstruct/gtceu_realgar_dust': '雄黄粉 输入=2x gtceu:realgar_dust 产出=砷粉×1、硫粉×1 | 来源=全链产率 | 每1粉=砷粉 0.5、硫粉 0.5'
+        ,'shanhai:deconstruct/gtceu_red_garnet_dust': '红石榴石粉 输入=320x gtceu:red_garnet_dust 产出=硅粉×48、铝粉×32、锰粉×24、铁粉×15、镁粉×9、氧 192000mB | 来源=全链产率 | 每1粉=氧 0.6、硅粉 0.15、铝粉 0.1、锰粉 0.075、铁粉 0.046875、镁粉 0.028125'
+        ,'shanhai:deconstruct/gtceu_rock_salt_dust': '岩盐粉 输入=2x gtceu:rock_salt_dust 产出=钾粉×1、氯 1000mB | 来源=全链产率 | 每1粉=钾粉 0.5、氯 0.5'
+        ,'shanhai:deconstruct/gtceu_ruby_dust': '红宝石粉 输入=6x gtceu:ruby_dust 产出=铝粉×2、铬粉×1、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.5、铝粉 0.333333、铬粉 0.166667'
+        ,'shanhai:deconstruct/gtceu_salt_dust': '盐粉 输入=2x gtceu:salt_dust 产出=钠粉×1、氯 1000mB | 来源=全链产率 | 每1粉=钠粉 0.5、氯 0.5'
+        ,'shanhai:deconstruct/gtceu_saltpeter_dust': '硝石粉 输入=5x gtceu:saltpeter_dust 产出=钾粉×1、氧 3000mB、氮 1000mB | 来源=全链产率 | 每1粉=氧 0.6、钾粉 0.2、氮 0.2'
+        ,'shanhai:deconstruct/gtceu_sapphire_dust': '蓝宝石粉 输入=5x gtceu:sapphire_dust 产出=铝粉×2、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、铝粉 0.4'
+        ,'shanhai:deconstruct/gtceu_silicon_dioxide_dust': '二氧化硅粉 输入=3x gtceu:silicon_dioxide_dust 产出=硅粉×1、氧 2000mB | 来源=全链产率 | 每1粉=氧 0.666667、硅粉 0.333333'
+        ,'shanhai:deconstruct/gtceu_soapstone_dust': '皂石粉 输入=21x gtceu:soapstone_dust 产出=硅粉×4、镁粉×3、氧 12000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.571429、硅粉 0.190476、镁粉 0.142857、氢 0.095238'
+        ,'shanhai:deconstruct/gtceu_soda_ash_dust': '纯碱粉 输入=6x gtceu:soda_ash_dust 产出=钠粉×2、碳粉×1、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.5、钠粉 0.333333、碳粉 0.166667'
+        ,'shanhai:deconstruct/gtceu_sodalite_dust': '方钠石粉 输入=11x gtceu:sodalite_dust 产出=钠粉×4、铝粉×3、硅粉×3、氯 1000mB | 来源=全链产率 | 每1粉=钠粉 0.363636、铝粉 0.272727、硅粉 0.272727、氯 0.090909'
+        ,'shanhai:deconstruct/gtceu_spessartine_dust': '锰铝榴石粉 输入=20x gtceu:spessartine_dust 产出=锰粉×3、硅粉×3、铝粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、锰粉 0.15、硅粉 0.15、铝粉 0.1'
+        ,'shanhai:deconstruct/gtceu_sphalerite_dust': '闪锌矿粉 输入=40x gtceu:sphalerite_dust 产出=锌粉×20、硫粉×20、镓粉×1 | 来源=全链产率 | 每1粉=锌粉 0.5、硫粉 0.5、镓粉 0.025'
+        ,'shanhai:deconstruct/gtceu_spodumene_dust': '锂辉石粉 输入=10x gtceu:spodumene_dust 产出=硅粉×2、锂粉×1、铝粉×1、氧 6000mB | 来源=全链产率 | 每1粉=氧 0.6、硅粉 0.2、锂粉 0.1、铝粉 0.1'
+        ,'shanhai:deconstruct/gtceu_stibnite_dust': '辉锑矿粉 输入=5x gtceu:stibnite_dust 产出=硫粉×3、锑粉×2 | 来源=全链产率 | 每1粉=硫粉 0.6、锑粉 0.4'
+        ,'shanhai:deconstruct/gtceu_talc_dust': '滑石粉 输入=21x gtceu:talc_dust 产出=硅粉×4、镁粉×3、氧 12000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.571429、硅粉 0.190476、镁粉 0.142857、氢 0.095238'
+        ,'shanhai:deconstruct/gtceu_tantalite_dust': '钽铁矿粉 输入=9x gtceu:tantalite_dust 产出=钽粉×2、锰粉×1、氧 6000mB | 来源=全链产率 | 每1粉=氧 0.666667、钽粉 0.222222、锰粉 0.111111'
+        ,'shanhai:deconstruct/gtceu_tetrahedrite_dust': '黝铜矿粉 输入=8x gtceu:tetrahedrite_dust 产出=铜粉×3、硫粉×3、锑粉×1、铁粉×1 | 来源=全链产率 | 每1粉=铜粉 0.375、硫粉 0.375、锑粉 0.125、铁粉 0.125'
+        ,'shanhai:deconstruct/gtceu_topaz_dust': '黄玉粉 输入=6x gtceu:topaz_dust 产出=铝粉×2、硅粉×1、氢 2000mB、氟 1000mB | 来源=全链产率 | 每1粉=铝粉 0.333333、氢 0.333333、硅粉 0.166667、氟 0.166667'
+        ,'shanhai:deconstruct/gtceu_tricalcium_phosphate_dust': '磷酸三钙粉 输入=25x gtceu:tricalcium_phosphate_dust 产出=钙粉×15、磷粉×2、氧 8000mB | 来源=全链产率 | 每1粉=钙粉 0.6、氧 0.32、磷粉 0.08'
+        ,'shanhai:deconstruct/gtceu_trinium_compound_dust': '凯金化合物粉 输入=9x gtceu:trinium_compound_dust 产出=硒粉×8、砹粉×8、凯金粉×9、锕粉×9 | 来源=扭曲仪配比 | 每1粉=凯金粉 1、锕粉 1、硒粉 0.888889、砹粉 0.888889'
+        ,'shanhai:deconstruct/gtceu_trona_dust': '天然碱粉 输入=16x gtceu:trona_dust 产出=钠粉×3、碳粉×2、氧 6002mB、氢 1004mB | 来源=全链产率 | 每1粉=氧 0.375125、钠粉 0.1875、碳粉 0.125、氢 0.06275'
+        ,'shanhai:deconstruct/gtceu_uvarovite_dust': '钙铬榴石粉 输入=20x gtceu:uvarovite_dust 产出=钙粉×3、硅粉×3、铬粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、钙粉 0.15、硅粉 0.15、铬粉 0.1'
+        ,'shanhai:deconstruct/gtceu_vanadium_magnetite_dust': '钒磁铁矿粉 输入=14x gtceu:vanadium_magnetite_dust 产出=钒粉×7、铁粉×3、氧 4000mB | 来源=全链产率 | 每1粉=钒粉 0.5、氧 0.285714、铁粉 0.214286'
+        ,'shanhai:deconstruct/gtceu_wulfenite_dust': '钼铅矿粉 输入=6x gtceu:wulfenite_dust 产出=铅粉×1、钼粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.666667、铅粉 0.166667、钼粉 0.166667'
+        ,'shanhai:deconstruct/gtceu_yellow_garnet_dust': '黄石榴石粉 输入=160x gtceu:yellow_garnet_dust 产出=钙粉×24、硅粉×24、铝粉×8、铁粉×5、铬粉×3、氧 96000mB | 来源=全链产率 | 每1粉=氧 0.6、钙粉 0.15、硅粉 0.15、铝粉 0.05、铁粉 0.03125、铬粉 0.01875'
+        ,'shanhai:deconstruct/gtceu_yellow_limonite_dust': '黄褐铁矿粉 输入=4x gtceu:yellow_limonite_dust 产出=铁粉×1、氧 2000mB、氢 1000mB | 来源=全链产率 | 每1粉=氧 0.5、铁粉 0.25、氢 0.25'
+        ,'shanhai:deconstruct/gtceu_zincite_dust': '红锌矿粉 输入=2x gtceu:zincite_dust 产出=锌粉×1、氧 1000mB | 来源=全链产率 | 每1粉=锌粉 0.5、氧 0.5'
+        ,'shanhai:deconstruct/gtceu_zircon_dust': '锆石粉 输入=30x gtceu:zircon_dust 产出=锆粉×5、硅粉×5、铪粉×3、氧 20000mB | 来源=全链产率 | 每1粉=氧 0.666667、锆粉 0.166667、硅粉 0.166667、铪粉 0.1'
+    }
+    var ovEvN = 0
+    for (var ke in OV_EV) { ovEvN = ovEvN + 1; console.info('[SHANHAI-PMD-ORE] ' + OV_EV[ke]) }
+    console.info('[SHANHAI-PMD-ORE] 覆盖条目(数值来自产率/扭曲仪) 合计=' + ovEvN)
+    // ═══ 🔴 新增批：矿物粉（集成矿石处理厂产物）→ 元素单质 ═══
+    //    7 条；输入为 N 份矿物粉，产出为【全链期望产率 × N】的精确整数配比（无四舍五入）
+    //    与上面 1147 条【不共用任何输入】⇒ 不冲突
+    var ORE_JOBS = [
+        {
+            id: 'shanhai:pmd_ore/gtceu_adamantine_compounds_dust', inItem: '4x gtceu:adamantine_compounds_dust',
+            cn: '精金化合物粉', src: 'adamantine_compounds', route: 'gtceu/lightning_processor/adamantine_compounds_dust_a.json',
+            outs: ['1x gtceu:adamantine_dust'],
+            fluids: [],
+            outsChn: '精金粉×1', fluidsChn: '', perChn: '精金粉 0.25'
+        }
+        ,{
+            id: 'shanhai:pmd_ore/gtceu_endstone_dust', inItem: '2000x gtceu:endstone_dust',
+            cn: '末地石粉', src: 'enderium', route: 'gtceu/centrifuge/endstone_separation.json',
+            outs: ['18x gtceu:lithium_dust', '14x gtceu:platinum_dust', '9x gtceu:tungsten_dust'],
+            fluids: ['gtceu:helium 240000'],
+            outsChn: '锂粉×18、铂粉×14、钨粉×9', fluidsChn: '氦 240000mB', perChn: '氦 0.12、锂粉 0.009、铂粉 0.007、钨粉 0.0045'
+        }
+        ,{
+            id: 'shanhai:pmd_ore/gtceu_jasper_dust', inItem: '16x gtceu:jasper_dust',
+            cn: '碧玉粉', src: 'jasper', route: 'thetornproductionline/extractor/easier_purified_tengam_dust.json',
+            outs: ['1x gtceu:purified_tengam_dust'],
+            fluids: [],
+            outsChn: '纯镃粉×1', fluidsChn: '', perChn: '纯镃粉 0.0625'
+        }
+        ,{
+            id: 'shanhai:pmd_ore/gtceu_monazite_dust', inItem: '16x gtceu:monazite_dust',
+            cn: '独居石粉', src: 'bastnasite/monazite/rare_earth_metal', route: 'cxhmz/electrolyzer/monazite.json',
+            outs: ['1x gtceu:europium_dust', '1x gtceu:samarium_dust', '1x gtceu:dysprosium_dust', '1x gtceu:erbium_dust', '1x gtceu:holmium_dust', '1x gtceu:gadolinium_dust', '1x gtceu:lanthanum_dust', '1x gtceu:yttrium_dust', '1x gtceu:thulium_dust', '1x gtceu:promethium_dust', '1x gtceu:praseodymium_dust', '1x gtceu:ytterbium_dust', '1x gtceu:terbium_dust', '1x gtceu:scandium_dust', '1x gtceu:neodymium_dust', '1x gtceu:lutetium_dust'],
+            fluids: [],
+            outsChn: '铕粉×1、钐粉×1、镝粉×1、铒粉×1、钬粉×1、钆粉×1、镧粉×1、钇粉×1、铥粉×1、钷粉×1、镨粉×1、镱粉×1、铽粉×1、钪粉×1、钕粉×1、镥粉×1', fluidsChn: '', perChn: '铕粉 0.0625、钐粉 0.0625、镝粉 0.0625、铒粉 0.0625、钬粉 0.0625、钆粉 0.0625、镧粉 0.0625、钇粉 0.0625、铥粉 0.0625、钷粉 0.0625、镨粉 0.0625、镱粉 0.0625、铽粉 0.0625、钪粉 0.0625、钕粉 0.0625、镥粉 0.0625'
+        }
+        ,{
+            id: 'shanhai:pmd_ore/gtceu_raw_tengam_dust', inItem: '1x gtceu:raw_tengam_dust',
+            cn: '生镃粉', src: 'jasper', route: 'cxbp/large_chemical_reactor/purified_tengam_dust_fast.json',
+            outs: ['1x gtceu:purified_tengam_dust'],
+            fluids: [],
+            outsChn: '纯镃粉×1', fluidsChn: '', perChn: '纯镃粉 1'
+        }
+        ,{
+            id: 'shanhai:pmd_ore/minecraft_glowstone_dust', inItem: '120x minecraft:glowstone_dust',
+            cn: '荧石粉', src: 'cinnabar/redstone', route: 'gtceu/centrifuge/glowstone_separation.json',
+            outs: ['60x gtceu:gold_dust', '20x gtceu:sulfur_dust', '10x gtceu:iron_dust', '6x gtceu:silicon_dust', '2x gtceu:aluminium_dust', '1x gtceu:chromium_dust'],
+            fluids: ['gtceu:mercury 18000', 'gtceu:oxygen 3000'],
+            outsChn: '金粉×60、硫粉×20、铁粉×10、硅粉×6、铝粉×2、铬粉×1', fluidsChn: '汞 18000mB、氧 3000mB', perChn: '金粉 0.5、硫粉 0.166667、汞 0.15、铁粉 0.083333、硅粉 0.05、氧 0.025、铝粉 0.016667、铬粉 0.008333'
+        }
+        ,{
+            id: 'shanhai:pmd_ore/trinium_compound_ore', inItem: '9x #forge:ores/trinium_compound',
+            cn: '凯金化合物矿石', src: 'trinium_compound', route: 'gtceu/integrated_ore_processor_1_trinium_compound.json',
+            outs: ['64x gtceu:selenium_dust', '64x gtceu:astatine_dust', '72x gtceu:trinium_dust', '72x gtceu:actinium_dust'],
+            fluids: [],
+            outsChn: '硒粉×64、砹粉×64、凯金粉×72、锕粉×72', fluidsChn: '', perChn: '硒粉 7.111111、砹粉 7.111111、凯金粉 8、锕粉 8',
+            fbId: 'shanhai:pmd_ore/gtceu_trinium_compound_ore', fbIn: '9x gtceu:trinium_compound_ore', fbNote: '裸 id 兜底（只覆盖石头变种）'
+        }
+    ]
+    var okOre = 0, badOre = 0
+    for (var oj = 0; oj < ORE_JOBS.length; oj++) {
+        var OJ = ORE_JOBS[oj]
+        try {
+            var bo = gtr[T](OJ.id).itemInputs(OJ.inItem)
+            if (OJ.outs.length) { bo = bo.itemOutputs(OJ.outs) }
+            if (OJ.fluids.length) { bo = bo.outputFluids(OJ.fluids) }
+            bo = bo.duration(200).EUt(32)
+            okOre = okOre + 1
+            if (ShanhaiStats) ShanhaiStats.addResult(true)
+            // 🔴 可 grep 的证据行：哪条矿物粉 / 出哪几种元素各多少 / 全链产率 / 配方的输入输出
+            console.info('[SHANHAI-PMD-ORE] ' + OJ.cn + ' 输入=' + OJ.inItem + ' 产出=' + OJ.outsChn + (OJ.fluidsChn ? ' +' + OJ.fluidsChn : '') + ' | 全链产率(每1粉)=' + OJ.perChn + ' | 来自矿=' + OJ.src + ' | 链=' + OJ.route)
+        } catch (eo) {
+            // 🔴 兜底重试：主写法（可能是 #tag 形式）不被支持时，换裸 id 再来一次
+            var fbOk = false
+            if (OJ.fbIn) {
+                try {
+                    var bf = gtr[T](OJ.fbId).itemInputs(OJ.fbIn)
+                    if (OJ.outs.length) { bf = bf.itemOutputs(OJ.outs) }
+                    if (OJ.fluids.length) { bf = bf.outputFluids(OJ.fluids) }
+                    bf = bf.duration(200).EUt(32)
+                    fbOk = true
+                    console.info('[SHANHAI-PMD-ORE] 兜底成功 —— 主写法注册失败，已改用裸 id：' + OJ.fbId + ' 输入=' + OJ.fbIn + ' 产出=' + OJ.outsChn + ' | 主写法的报错=' + eo)
+                } catch (e2) { console.info('[SHANHAI-PMD-ORE-FAIL] 兜底也失败：' + OJ.fbId + ' 输入=' + OJ.fbIn + ' => ' + e2) }
+            }
+            if (fbOk) { okOre = okOre + 1; if (ShanhaiStats) ShanhaiStats.addResult(true) }
+            else {
+                badOre = badOre + 1
+                if (ShanhaiStats) ShanhaiStats.addResult(false)
+                console.info('[SHANHAI-PMD-ORE-FAIL] ' + OJ.id + ' 输入=' + OJ.inItem + ' => ' + eo)
+            }
+        }
+    }
+    console.info('[SHANHAI-PMD-ORE] 矿物粉→元素 合计=' + ORE_JOBS.length + ' 成功=' + okOre + ' 失败=' + badOre)
+    if (badOre > 0) { console.info('[SHANHAI-PMD-ORE] 有失败项 —— 上述 [SHANHAI-PMD-ORE-FAIL] 行逐条给出了输入原文名称') }
+    console.info('[SHANHAI-DECON] jobs=' + JOBS.length + ' oreJobs=' + ORE_JOBS.length + ' => ok=' + ok + ' failed=' + bad + ' EUt=32')
     // 🔴 2026-09-27：给本批留一次 summary —— 横幅【一行一批】需要它进 BY_SCOPE。
     //    本脚本【不 reset()】（跑最前，累加器本来就是 0）⇒ 这里的 total 就是本批的条数。
     if (ShanhaiStats) {

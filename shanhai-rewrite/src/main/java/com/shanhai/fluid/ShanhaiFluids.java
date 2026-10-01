@@ -63,17 +63,9 @@ public final class ShanhaiFluids {
     // 贴图名 ≠ 流体名的 1 条：light → light_fluid.png / light_fluid_flow.png
     // ==================================================================
 
-    /** 流体 `causal_essence`（因果精髓）· 贴图 `causal_essence.png`（flow `causal_essence_flow.png`）· 桶 `shanhai:causal_essence_bucket`（因果精髓桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> CAUSAL_ESSENCE =
-            fluid("causal_essence", "causal_essence", "causal_essence_flow", "因果精髓");
-
-    /** 流体 `chaos_fluid`（永恒混沌）· 贴图 `chaos_fluid.png`（flow `chaos_fluid_flow.png`）· 桶 `shanhai:chaos_fluid_bucket`（永恒混沌桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> CHAOS_FLUID =
-            fluid("chaos_fluid", "chaos_fluid", "chaos_fluid_flow", "永恒混沌");
-
-    /** 流体 `dimensional_fabric`（维度织构）· 贴图 `dimensional_fabric.png`（flow `dimensional_fabric_flow.png`）· 桶 `shanhai:dimensional_fabric_bucket`（维度织构桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> DIMENSIONAL_FABRIC =
-            fluid("dimensional_fabric", "dimensional_fabric", "dimensional_fabric_flow", "维度织构");
+    /** 流体 `zero_point_energy`（真空零点能）· 贴图 `zero_point_energy.png`（flow `zero_point_energy_flow.png`）· 桶 `shanhai:zero_point_energy_bucket`（真空零点能桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> ZERO_POINT_ENERGY =
+            fluid("zero_point_energy", "zero_point_energy", "zero_point_energy_flow", "真空零点能");
 
     /** 流体 `light`（光）· 贴图 `light_fluid.png`（flow `light_fluid_flow.png`）· 桶 `shanhai:light_bucket`（光桶）。 */
     public static final FluidEntry<ForgeFlowingFluid.Flowing> LIGHT =
@@ -83,85 +75,93 @@ public final class ShanhaiFluids {
     public static final FluidEntry<ForgeFlowingFluid.Flowing> LIQUID_ENDING =
             fluid("liquid_ending", "liquid_ending", "liquid_ending_flow", "液态终末");
 
-    /** 流体 `matter_fluid_advanced`（重组物质流）· 贴图 `matter_fluid_advanced.png`（flow `matter_fluid_advanced_flow.png`）· 桶 `shanhai:matter_fluid_advanced_bucket`（高级物质流桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_ADVANCED =
-            fluid("matter_fluid_advanced", "matter_fluid_advanced", "matter_fluid_advanced_flow", "重组物质流");
-
-    /** 流体 `matter_fluid_ascension`（升维物质流）· 贴图 `matter_fluid_ascension.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_ascension_bucket`（升维物质流桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_ASCENSION =
-            fluid("matter_fluid_ascension", "matter_fluid_ascension", "matter_fluid_ascension", "升维物质流");
-
-    /** 流体 `matter_fluid_basic`（推演物质流）· 贴图 `matter_fluid_basic.png`（flow `matter_fluid_basic_flow.png`）· 桶 `shanhai:matter_fluid_basic_bucket`（初级物质流桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_BASIC =
-            fluid("matter_fluid_basic", "matter_fluid_basic", "matter_fluid_basic_flow", "推演物质流");
-
-    /** 流体 `matter_fluid_darkstar`（暗星物质流）· 贴图 `matter_fluid_darkstar.png`（flow `matter_fluid_darkstar_flow.png`）· 桶 `shanhai:matter_fluid_darkstar_bucket`（暗星物质流桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_DARKSTAR =
-            fluid("matter_fluid_darkstar", "matter_fluid_darkstar", "matter_fluid_darkstar_flow", "暗星物质流");
-
     /** 流体 `matter_fluid_entry`（入门物质流）· 贴图 `matter_fluid_entry.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_entry_bucket`（入门物质流桶）。 */
     public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_ENTRY =
             fluid("matter_fluid_entry", "matter_fluid_entry", "matter_fluid_entry", "入门物质流");
-
-    /** 流体 `matter_fluid_eternal`（永恒物质流）· 贴图 `matter_fluid_eternal.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_eternal_bucket`（永恒物质流桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_ETERNAL =
-            fluid("matter_fluid_eternal", "matter_fluid_eternal", "matter_fluid_eternal", "永恒物质流");
 
     /** 流体 `matter_fluid_foundation`（基础物质流）· 贴图 `matter_fluid_foundation.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_foundation_bucket`（基础物质流桶）。 */
     public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_FOUNDATION =
             fluid("matter_fluid_foundation", "matter_fluid_foundation", "matter_fluid_foundation", "基础物质流");
 
-    /** 流体 `matter_fluid_peak`（巅峰物质流）· 贴图 `matter_fluid_peak.png`（flow `matter_fluid_peak_flow.png`）· 桶 `shanhai:matter_fluid_peak_bucket`（巅峰物质流桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_PEAK =
-            fluid("matter_fluid_peak", "matter_fluid_peak", "matter_fluid_peak_flow", "巅峰物质流");
-
-    /** 流体 `matter_fluid_transcend`（超限物质流）· 贴图 `matter_fluid_transcend.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_transcend_bucket`（超限物质流桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_TRANSCEND =
-            fluid("matter_fluid_transcend", "matter_fluid_transcend", "matter_fluid_transcend", "超限物质流");
-
-    /** 流体 `matter_fluid_transition`（虚数跃迁物质流）· 贴图 `matter_fluid_transition.png`（flow `matter_fluid_transition_flow.png`）· 桶 `shanhai:matter_fluid_transition_bucket`（虚数跃迁物质流桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_TRANSITION =
-            fluid("matter_fluid_transition", "matter_fluid_transition", "matter_fluid_transition_flow", "虚数跃迁物质流");
-
-    /** 流体 `matter_fluid_transmutation`（嬗变物质流）· 贴图 `matter_fluid_transmutation.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_transmutation_bucket`（嬗变物质流桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_TRANSMUTATION =
-            fluid("matter_fluid_transmutation", "matter_fluid_transmutation", "matter_fluid_transmutation", "嬗变物质流");
-
-    /** 流体 `matter_fluid_ultimate`（创造物质流）· 贴图 `matter_fluid_ultimate.png`（flow `matter_fluid_ultimate_flow.png`）· 桶 `shanhai:matter_fluid_ultimate_bucket`（终极物质流桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_ULTIMATE =
-            fluid("matter_fluid_ultimate", "matter_fluid_ultimate", "matter_fluid_ultimate_flow", "创造物质流");
+    /** 流体 `matter_fluid_basic`（推演物质流）· 贴图 `matter_fluid_basic.png`（flow `matter_fluid_basic_flow.png`）· 桶 `shanhai:matter_fluid_basic_bucket`（初级物质流桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_BASIC =
+            fluid("matter_fluid_basic", "matter_fluid_basic", "matter_fluid_basic_flow", "推演物质流");
 
     /** 流体 `matter_fluid_virtual`（虚像物质流）· 贴图 `matter_fluid_virtual.png`（flow `matter_fluid_virtual_flow.png`）· 桶 `shanhai:matter_fluid_virtual_bucket`（虚像物质流桶）。 */
     public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_VIRTUAL =
             fluid("matter_fluid_virtual", "matter_fluid_virtual", "matter_fluid_virtual_flow", "虚像物质流");
 
+    /** 流体 `matter_fluid_transmutation`（嬗变物质流）· 贴图 `matter_fluid_transmutation.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_transmutation_bucket`（嬗变物质流桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_TRANSMUTATION =
+            fluid("matter_fluid_transmutation", "matter_fluid_transmutation", "matter_fluid_transmutation", "嬗变物质流");
+
+    /** 流体 `matter_fluid_darkstar`（暗星物质流）· 贴图 `matter_fluid_darkstar.png`（flow `matter_fluid_darkstar_flow.png`）· 桶 `shanhai:matter_fluid_darkstar_bucket`（暗星物质流桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_DARKSTAR =
+            fluid("matter_fluid_darkstar", "matter_fluid_darkstar", "matter_fluid_darkstar_flow", "暗星物质流");
+
+    /** 流体 `matter_fluid_advanced`（重组物质流）· 贴图 `matter_fluid_advanced.png`（flow `matter_fluid_advanced_flow.png`）· 桶 `shanhai:matter_fluid_advanced_bucket`（高级物质流桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_ADVANCED =
+            fluid("matter_fluid_advanced", "matter_fluid_advanced", "matter_fluid_advanced_flow", "重组物质流");
+
+    /** 流体 `matter_fluid_transition`（虚数跃迁物质流）· 贴图 `matter_fluid_transition.png`（flow `matter_fluid_transition_flow.png`）· 桶 `shanhai:matter_fluid_transition_bucket`（虚数跃迁物质流桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_TRANSITION =
+            fluid("matter_fluid_transition", "matter_fluid_transition", "matter_fluid_transition_flow", "虚数跃迁物质流");
+
     /** 流体 `matter_fluid_zero`（归零物质流）· 贴图 `matter_fluid_zero.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_zero_bucket`（归零物质流桶）。 */
     public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_ZERO =
             fluid("matter_fluid_zero", "matter_fluid_zero", "matter_fluid_zero", "归零物质流");
+
+    /** 流体 `matter_fluid_peak`（巅峰物质流）· 贴图 `matter_fluid_peak.png`（flow `matter_fluid_peak_flow.png`）· 桶 `shanhai:matter_fluid_peak_bucket`（巅峰物质流桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_PEAK =
+            fluid("matter_fluid_peak", "matter_fluid_peak", "matter_fluid_peak_flow", "巅峰物质流");
+
+    /** 流体 `matter_fluid_ascension`（升维物质流）· 贴图 `matter_fluid_ascension.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_ascension_bucket`（升维物质流桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_ASCENSION =
+            fluid("matter_fluid_ascension", "matter_fluid_ascension", "matter_fluid_ascension", "升维物质流");
+
+    /** 流体 `matter_fluid_transcend`（超限物质流）· 贴图 `matter_fluid_transcend.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_transcend_bucket`（超限物质流桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_TRANSCEND =
+            fluid("matter_fluid_transcend", "matter_fluid_transcend", "matter_fluid_transcend", "超限物质流");
+
+    /** 流体 `matter_fluid_eternal`（永恒物质流）· 贴图 `matter_fluid_eternal.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:matter_fluid_eternal_bucket`（永恒物质流桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_ETERNAL =
+            fluid("matter_fluid_eternal", "matter_fluid_eternal", "matter_fluid_eternal", "永恒物质流");
+
+    /** 流体 `matter_fluid_ultimate`（创造物质流）· 贴图 `matter_fluid_ultimate.png`（flow `matter_fluid_ultimate_flow.png`）· 桶 `shanhai:matter_fluid_ultimate_bucket`（终极物质流桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> MATTER_FLUID_ULTIMATE =
+            fluid("matter_fluid_ultimate", "matter_fluid_ultimate", "matter_fluid_ultimate_flow", "创造物质流");
 
     /** 流体 `primal_chaos`（原初混沌）· 贴图 `primal_chaos.png`（flow `primal_chaos_flow.png`）· 桶 `shanhai:primal_chaos_bucket`（原初混沌桶）。 */
     public static final FluidEntry<ForgeFlowingFluid.Flowing> PRIMAL_CHAOS =
             fluid("primal_chaos", "primal_chaos", "primal_chaos_flow", "原初混沌");
 
-    /** 流体 `spacetime`（时空流体）· 贴图 `spacetime.png`（flow `spacetime_flow.png`）· 桶 `shanhai:spacetime_bucket`（时空流体桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> SPACETIME =
-            fluid("spacetime", "spacetime", "spacetime_flow", "时空流体");
+    /** 流体 `dimensional_fabric`（维度织构）· 贴图 `dimensional_fabric.png`（flow `dimensional_fabric_flow.png`）· 桶 `shanhai:dimensional_fabric_bucket`（维度织构桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> DIMENSIONAL_FABRIC =
+            fluid("dimensional_fabric", "dimensional_fabric", "dimensional_fabric_flow", "维度织构");
+
+    /** 流体 `causal_essence`（因果精髓）· 贴图 `causal_essence.png`（flow `causal_essence_flow.png`）· 桶 `shanhai:causal_essence_bucket`（因果精髓桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> CAUSAL_ESSENCE =
+            fluid("causal_essence", "causal_essence", "causal_essence_flow", "因果精髓");
 
     /** 流体 `stabilized_eternity`（稳态永恒）· 贴图 `stabilized_eternity.png`（flow `stabilized_eternity_flow.png`）· 桶 `shanhai:stabilized_eternity_bucket`（稳态永恒桶）。 */
     public static final FluidEntry<ForgeFlowingFluid.Flowing> STABILIZED_ETERNITY =
             fluid("stabilized_eternity", "stabilized_eternity", "stabilized_eternity_flow", "稳态永恒");
 
-    /** 流体 `universal_coolant`（寰宇联合冷却液）· 贴图 `universal_coolant.png`（flow `universal_coolant_flow.png`）· 桶 `shanhai:universal_coolant_bucket`（寰宇联合冷却液桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> UNIVERSAL_COOLANT =
-            fluid("universal_coolant", "universal_coolant", "universal_coolant_flow", "寰宇联合冷却液");
+    /** 流体 `chaos_fluid`（永恒混沌）· 贴图 `chaos_fluid.png`（flow `chaos_fluid_flow.png`）· 桶 `shanhai:chaos_fluid_bucket`（永恒混沌桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> CHAOS_FLUID =
+            fluid("chaos_fluid", "chaos_fluid", "chaos_fluid_flow", "永恒混沌");
 
     /** 流体 `wl_catalyst`（世线光刻催化剂）· 贴图 `wl_catalyst.png`（🔴 源目录无 flow ⇒ flowingTexture 指回 still（避免缺失贴图））· 桶 `shanhai:wl_catalyst_bucket`（世线光刻催化剂桶）。 */
     public static final FluidEntry<ForgeFlowingFluid.Flowing> WL_CATALYST =
             fluid("wl_catalyst", "wl_catalyst", "wl_catalyst", "世线光刻催化剂");
 
-    /** 流体 `zero_point_energy`（真空零点能）· 贴图 `zero_point_energy.png`（flow `zero_point_energy_flow.png`）· 桶 `shanhai:zero_point_energy_bucket`（真空零点能桶）。 */
-    public static final FluidEntry<ForgeFlowingFluid.Flowing> ZERO_POINT_ENERGY =
-            fluid("zero_point_energy", "zero_point_energy", "zero_point_energy_flow", "真空零点能");
+    /** 流体 `universal_coolant`（寰宇联合冷却液）· 贴图 `universal_coolant.png`（flow `universal_coolant_flow.png`）· 桶 `shanhai:universal_coolant_bucket`（寰宇联合冷却液桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> UNIVERSAL_COOLANT =
+            fluid("universal_coolant", "universal_coolant", "universal_coolant_flow", "寰宇联合冷却液");
+
+    /** 流体 `spacetime`（时空流体）· 贴图 `spacetime.png`（flow `spacetime_flow.png`）· 桶 `shanhai:spacetime_bucket`（时空流体桶）。 */
+    public static final FluidEntry<ForgeFlowingFluid.Flowing> SPACETIME =
+            fluid("spacetime", "spacetime", "spacetime_flow", "时空流体");
 
     /**
      * 触发本类静态初始化（进而把 25 个流体 + 25 个桶交给 REGISTRATE）。

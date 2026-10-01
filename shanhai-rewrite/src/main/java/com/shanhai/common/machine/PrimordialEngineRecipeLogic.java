@@ -357,6 +357,19 @@ public class PrimordialEngineRecipeLogic extends MutableRecipesLogic<PrimordialO
      */
     @Override
     protected LongLongPair calculateParallel(IRecipeLogicMachine machine, GTRecipe match, long remain) {
+        // 🔴 2026-09-27 第二轮：原先这里包了一层 PrimordialRecipeEffects.scaleParallelForBatch(...)
+        //    （批处理把并行份数 ×N）。该方法已【整体删除】—— 它做出来的是"并行"而不是"批处理"：
+        //    multipleRecipe 会把 tickInputs(EU/t) 一起乘 N（⇒ 耗电 ×N），而耗时被模块 N6 钉回原值。
+        //    主机侧本来就走不到那一支（BatchProcessing.isEnabled(self) 恒为 false：本类三道覆写全返回 false，
+        //    见 canConfigureBatchProcessing() 的 javadoc，那是用户 2026-09-22 的裁决；而 batchMultiplier
+        //    的第一句就是 `if (!BatchProcessing.isEnabled(self)) return 1;`）⇒ 删前删后【逐值相同】。
+        //    新批处理（连跑 N 次：输入×N／输出×N／耗时×N／EU/t 不变）只在【模块侧】施加
+        //    （PrimordialModuleRecipeLogic#buildFinalNormalRecipe ⑥），主机侧一个字节的行为都没变。
+        return shanhai$calculateParallelDirect(machine, match, remain);
+    }
+
+    /** 上面那一行的原实现（未接批处理倍率的那一份）。 */
+    private LongLongPair shanhai$calculateParallelDirect(IRecipeLogicMachine machine, GTRecipe match, long remain) {
         final LongLongPair base = super.calculateParallel(machine, match, remain);
         try {
             final long inputLimited = base.firstLong();

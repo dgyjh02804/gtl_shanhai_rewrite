@@ -88,6 +88,33 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 所有可复用状态都是 {@link ThreadLocal}（各自一份，互不干扰），
  * 唯一共享的是 {@link ShanhaiTextParser} 里那个 {@code synchronizedMap} 缓存（值不可变）。
  *
+ * <h2>4.5 🔴 加粗（{@code &$#<样式名>-正文}，2026-09-30 新增）</h2>
+ * 语法与选 {@code #} 的理由见 {@link ShanhaiTextParser} 类注释 §2.2，这里只说<b>本类怎么接</b>：
+ * <ul>
+ *   <li><b>单次绘制</b>（{@link #drawWholeLine}）：槽位 {@code Style} 上加一次
+ *       {@code .withBold(Boolean.TRUE)} —— 与颜色挂在同一个 {@code Style} 上，
+ *       <b>一个额外对象都不多分配</b>（原来就每槽一个 {@code Style}）。</li>
+ *   <li><b>逐字绘制</b>（{@link #drawPerChar}）：用<b>类加载期就建好的常量</b> {@link #BOLD_STYLE} ——
+ *       {@code Style.EMPTY.withBold(TRUE)} 只在静态初始化时算一次，热路径<b>零分配</b>
+ *       （原来这里传的是 {@code Style.EMPTY}，现在只是多了一个可选的常量引用）。</li>
+ *   <li><b>宽度</b>（{@link #widthOf}）：{@code Font.width(String)} 走 {@code Style.EMPTY}，
+ *       <b>量不到加粗</b> ⇒ 补上 {@link ShanhaiTextParser#boldAdvance}（= 正文字形的码点数）。
+ *       不补的话这两块板居中时每字偏 1 px。</li>
+ *   <li><b>不动的东西</b>：{@code hasMotion()} 仍然只看 {@code ?}/{@code *}
+ *       （加粗不改坐标，不需要逐字路径）；退化 A（样式名拼错）<b>不带加粗</b>；
+ *       {@code prefix} <b>不加粗</b>。</li>
+ * </ul>
+ * <b>MC 侧的实证</b>（全部 {@code javap -c}，非推断）：
+ * <pre>
+ *   Font$StringRenderOutput.accept :  59 aload_2 / 60 invokevirtual Style.isBold()Z / 63 istore 7
+ *                                   : 282 aload 5 / 283 iload 7 / 286 GlyphInfo.getAdvance(Z)F / 291 fstore 13
+ *                                   : 445 aload_0 dup / 447 getfield x:F / 450 fload 13 / 452 fadd / 453 putfield x:F
+ *   GlyphInfo.getAdvance(Z)        : getAdvance() + (Z ? getBoldOffset() : 0)；getBoldOffset() 默认 fconst_1
+ *   Font.<init> 的 WidthProvider   : lambda$new$0 — 16 aload_2 / 17 Style.isBold()Z / 20 GlyphInfo.getAdvance(Z)F
+ * </pre>
+ * ⇒ <b>同一个 {@code Style.isBold()} 同时驱动「画多宽」和「量多宽」</b>，两条路自动一致，
+ * 我们只需要把 {@code Style} 挂对。
+ *
  * <h2>5. 失败模式（本项目铁律：两种失败必须长得不一样）</h2>
  * <ul>
  *   <li><b>注入失败</b> ⇒ 混入的 {@code require = 1} 让游戏<b>启动即崩</b>（响亮）；</li>
@@ -96,6 +123,30 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li><b>注入成功但没生效</b> ⇒ 客户端日志里<b>没有</b>
  *       {@code [SHANHAI-SPEC] font_style_mixin hooked …} 这行 ⇒ 一眼区分「没注入」和「算错了」。</li>
  * </ul>
+ *
+ * <h2>6. 🔴 两条家族与两个入口（2026-10-01 新增 {@link #renderString}）</h2>
+ * {@code Font} 把文字画出去分成两个<b>互不相干</b>的家族（字节码见 mixin 类注释 §2），
+ * 本类对应两个入口，<b>不能只做一个</b>：
+ * <table border="1">
+ *   <tr><th>家族</th><th>收口方法（注入点）</th><th>本类入口</th><th>典型调用方</th></tr>
+ *   <tr>
+ *     <td>{@code Component} / {@link FormattedCharSequence}</td>
+ *     <td>{@code drawInBatch(FormattedCharSequence,…)} = {@code m_272191_}</td>
+ *     <td>{@link #renderFcs}</td>
+ *     <td>聊天 / 物品名 / tooltip / JEI；{@code GuiGraphics.drawString(Font,Component,…)} 也落到这里</td>
+ *   </tr>
+ *   <tr>
+ *     <td>{@code String}（裸字符串）</td>
+ *     <td>{@code drawInBatch(String,…,IIZ)} = {@code m_272078_}</td>
+ *     <td>{@link #renderString}</td>
+ *     <td>LDLib {@code LabelWidget} 的 String 分支（→ {@code GuiGraphics.m_280056_}）；
+ *         AE2 / FTB / KubeJS / Polylib / Sophisticated 等直接调 {@code m_271703_}（10 参，转调到这条）</td>
+ *   </tr>
+ * </table>
+ * 🔴 <b>仍然罩不住</b>：{@code Font.drawInBatch8xOutline}（描边/发光文字）自己 new
+ * {@code Font$StringRenderOutput} 逐偏移画，<b>不经过任何 {@code drawInBatch}</b>。
+ * 实测调用者 = 原版 {@code SignRenderer} 与 Jade {@code ProgressStyle}（{@code glowText} 时）。
+ * 这是<b>改前就存在</b>的缺口，本轮不动 —— 记在这里，免得下一个人以为"注入齐了就全覆盖"。
  */
 public final class ShanhaiFontStyleRenderer {
 
@@ -107,10 +158,31 @@ public final class ShanhaiFontStyleRenderer {
      * 改了混入就必须改这里（否则那行日志会撒谎）。
      */
     public static final String HOOK_METHODS =
-            "{drawInBatch:FormattedCharSequence, width:FormattedCharSequence, width:FormattedText, width:String}";
+            "{drawInBatch:FormattedCharSequence, drawInBatch:String, width:FormattedCharSequence, "
+                    + "width:FormattedText, width:String}";
+
+    /**
+     * 加粗支持的对外标记 —— 进日志用。
+     *
+     * <p>🔴 <b>它存在的唯一理由</b>：用户会在客户端日志里找「这版 jar 到底有没有加粗」。
+     * 只看 {@code methods=} 那一串<b>分不出来</b>（2026-09-30 那版与它的上一版 {@code HOOK_METHODS} 逐字相同）
+     * ⇒ 加一个随功能一起出现的字段，让「日志里有没有 {@code bold=#}」成为判据。
+     */
+    public static final String BOLD_MARKER = "#";
 
     /** 收集字符串时最多接受多少个码点，超了就当「不是我们的码」。防止病态长文本把热路径拖垮。 */
     private static final int MAX_CODEPOINTS = 1024;
+
+    /**
+     * 逐字绘制路径用的<b>加粗样式常量</b> —— 类加载期建一次，热路径复用（零分配）。
+     *
+     * <p>为什么可以复用：{@code Style} 是<b>不可变</b>的（所有 {@code withXxx} 都返回新实例），
+     * 且它<b>不带颜色</b>（{@code getColor()==null}）⇒ {@code StringRenderOutput.accept} 里
+     * {@code TextColor textcolor = style.getColor(); int j = textcolor != null ? textcolor.getValue() : color;}
+     * 会回落到调用方传进来的 {@code color} 参数 ⇒ <b>加粗与「颜色走参数」这两个机制不冲突</b>
+     * （取证：{@code javap -c Font$StringRenderOutput.accept} 的 {@code 71 getColor / 79 ifnull 149}）。
+     */
+    private static final Style BOLD_STYLE = Style.EMPTY.withBold(Boolean.TRUE);
 
     private static final AtomicBoolean HOOK_LOGGED = new AtomicBoolean(false);
 
@@ -130,8 +202,8 @@ public final class ShanhaiFontStyleRenderer {
      */
     private static void logHookedOnce() {
         if (HOOK_LOGGED.compareAndSet(false, true)) {
-            ShanhaiMod.LOGGER.info("[SHANHAI-SPEC] font_style_mixin hooked methods={} paletteStyles={}",
-                    HOOK_METHODS, ShanhaiTextPalette.styleCount());
+            ShanhaiMod.LOGGER.info("[SHANHAI-SPEC] font_style_mixin hooked methods={} paletteStyles={} bold={}",
+                    HOOK_METHODS, ShanhaiTextPalette.styleCount(), BOLD_MARKER);
         }
     }
 
@@ -241,6 +313,73 @@ public final class ShanhaiFontStyleRenderer {
         }
     }
 
+    /**
+     * {@code Font.drawInBatch(String, …, boolean)}（<b>11 参那个</b>）的接管实现 ——
+     * <b>「裸字符串」那一条家族的入口</b>（2026-10-01 新增，见类注释 §6）。
+     *
+     * <p>为什么必须补这条：一个 {@code Component} 只要被调用方 {@code .getString()} 拍平成 String
+     * （实机反例：{@code GTRecipeWidget:660} → {@code LabelWidget.<init>(IILjava/lang/String;)V}），
+     * 它就落回这条<b>不走 FCS</b> 的路 ⇒ 只注 FCS 的版本接管不到 ⇒ 码原样画出来（用户图1）。
+     *
+     * <p>与 {@link #renderFcs} 的三处差异（都是有意的）：
+     * <ol>
+     *   <li><b>探针按 String 做</b>（{@code indexOf('&')}）—— 这一步不产出任何对象；</li>
+     *   <li><b>解析直接走 {@link ShanhaiTextParser#parse(String)}</b> —— String 本来就是缓存表的 key，
+     *       不需要 {@link #extract} 那一层；</li>
+     *   <li><b>重入标记同一条</b>（{@link #IN_RENDER}）：{@link #drawDegraded} 的退化成字与
+     *       {@link #drawStyled} 的 {@code prefix} 都是<b>用 String 重画</b>的，必须立刻放行，
+     *       否则 ① 递归 ② 把该由原版解析的 {@code §} 抢掉。</li>
+     * </ol>
+     *
+     * @return {@code null} = <b>我们不管这条</b>（调用方必须原样交回原版渲染）；
+     *         非 null = 已画完，值为 x 方向推进量
+     */
+    public static Integer renderString(Font self,
+                                       String text,
+                                       float x, float y, int color, boolean shadow,
+                                       Matrix4f matrix, MultiBufferSource buffer, Font.DisplayMode mode,
+                                       int packedLight, int packedOverlay) {
+        logHookedOnce();
+        if (text == null || text.isEmpty() || self == null) {
+            return null;
+        }
+        boolean[] inRender = IN_RENDER.get();
+        if (inRender[0]) {
+            return null;
+        }
+        // ---- 第 1 步：零分配探针（99%+ 的调用在这里就返回了） ----
+        if (text.indexOf('&') < 0) {
+            return null;
+        }
+        // 异常兜底的判据与 renderFcs 同口径：必须在整个 try 之外清零。
+        final boolean[] started = STARTED.get();
+        started[0] = false;
+        try {
+            // ---- 第 2 步：拿解析结果（String 直接就是缓存 key） ----
+            ShanhaiTextParser.Parsed parsed = ShanhaiTextParser.parse(text);
+            if (parsed == null || !parsed.ours()) {
+                return null;
+            }
+
+            // ---- 第 3 步：画 ----
+            inRender[0] = true;
+            try {
+                if (parsed.palette() == null) {
+                    return drawDegraded(self, parsed, x, y, color, shadow, matrix, buffer, mode,
+                            packedLight, packedOverlay, started);
+                }
+                return drawStyled(self, parsed, x, y, color, shadow, matrix, buffer, mode,
+                        packedLight, packedOverlay, started);
+            } finally {
+                inRender[0] = false;
+            }
+        } catch (Throwable t) {
+            logError("drawInBatchString", t);
+            // 与 renderFcs 同一条兜底：画了一半就别重复画（重影），一个字没画就交回原版。
+            return STARTED.get()[0] ? Integer.valueOf(Math.round(x)) : null;
+        }
+    }
+
     // ================================================================== 入口：宽度
 
     /**
@@ -320,7 +459,16 @@ public final class ShanhaiFontStyleRenderer {
             inWidth[0] = true;
             try {
                 int w = self.width(parsed.cleanText());
-                return w > 0 ? Integer.valueOf(w) : null;
+                if (w <= 0) {
+                    return null;
+                }
+                if (parsed.bold()) {
+                    // 🔴 Font.width(String) 走 Style.EMPTY ⇒ 量不到加粗，必须自己补（见类注释 §4.5）。
+                    //    ceil(a + n) == ceil(a) + n（n 是整数）⇒ 「先取整再加码点数」与「先加再取整」等价，
+                    //    所以这里可以直接在 Font 已经 ceil 过的结果上加。
+                    w += ShanhaiTextParser.boldAdvance(parsed.body());
+                }
+                return Integer.valueOf(w);
             } finally {
                 inWidth[0] = false;
             }
@@ -336,8 +484,11 @@ public final class ShanhaiFontStyleRenderer {
      * <b>退化绘制</b>：样式名没移植（{@code palette == null}）⇒ 剥掉码、按普通文字画，<b>不染任何颜色</b>。
      *
      * <p>用 {@code Font.drawInBatch(String, …)} 一次画完 —— 它是<b>另一个重载</b>
-     * （取证：{@code javap} 显示它转调 {@code drawInBatch(String,…,boolean)}，<b>不经过 FCS 那个重载</b>），
-     * 所以<b>不会</b>再次进入本混入。
+     * （取证：{@code javap} 显示它转调 {@code drawInBatch(String,…,boolean)}，<b>不经过 FCS 那个重载</b>）。
+     * <p>🔴 <b>2026-10-01 更正</b>：这段注释原来接下来写的是"所以不会再次进入本混入" ——
+     * <b>那句话现在是错的</b>：String 家族已经补了注入点（{@link #renderString} 走 {@code m_272078_}），
+     * 这次调用<b>会</b>再次进到那里。⇒ 由 {@link #IN_RENDER} 重入标记当场放行（返回 {@code null} 不取消原版），
+     * <b>交给原版画</b>——这是刻意的：剥完码的正文里可能有 {@code §}，而 {@code §} 只在 String 路径上被原版解析。
      */
     private static int drawDegraded(Font self, ShanhaiTextParser.Parsed parsed,
                                     float x, float y, int color, boolean shadow,
@@ -379,31 +530,38 @@ public final class ShanhaiFontStyleRenderer {
         }
 
         if (parsed.hasMotion()) {
-            return drawPerChar(self, parsed, body, palette, intPhase, frac, now, curX, y, color, shadow,
-                    matrix, buffer, mode, packedLight, packedOverlay, started);
+            return drawPerChar(self, parsed, body, palette, parsed.bold(), intPhase, frac, now, curX, y,
+                    color, shadow, matrix, buffer, mode, packedLight, packedOverlay, started);
         }
-        return drawWholeLine(self, body, palette, len, bodyLen, intPhase, frac, curX, y, color, shadow,
-                matrix, buffer, mode, packedLight, packedOverlay, started);
+        return drawWholeLine(self, body, palette, len, bodyLen, parsed.bold(), intPhase, frac, curX, y,
+                color, shadow, matrix, buffer, mode, packedLight, packedOverlay, started);
     }
 
     /**
      * <b>逐字绘制</b>（有位移效果时）。
      *
      * <p>逐字循环里<b>一个 {@code new} 都没有</b>：
-     * 复用 {@link CharSeq} 当 FCS、样式恒为 {@code Style.EMPTY}、颜色走 {@code drawInBatch} 的
+     * 复用 {@link CharSeq} 当 FCS、样式恒为<b>两个类加载期常量之一</b>（{@code Style.EMPTY} 或
+     * {@link #BOLD_STYLE}）、颜色走 {@code drawInBatch} 的
      * {@code color} 参数 —— 取证：{@code Font$StringRenderOutput.accept} 的字节码里
      * {@code TextColor textcolor = style.getColor(); int j = textcolor != null ? textcolor.getValue() : color;}
      * ⇒ <b>样式没带色时就用参数色</b>，所以「每字一个 Style」不是必需的。
      *
      * <p>{@code currentX = adv - xOff} 照抄上游 {@code WobbleFontMixin.java:633}：
      * {@code drawInBatch} 的返回值已经把 xOff 算进去了，减掉才是「这个字真正的推进量」。
+     *
+     * <p>⚠️ 加粗会让 {@code drawInBatch} 的返回值每字多 1 px（{@code GlyphInfo.getAdvance(Z)} 实证），
+     * 而 {@code xOff} 里<b>没有</b>这一项 ⇒ {@code adv - xOff} 仍然正确
+     * （加粗是推进量的一部分，本来就该被算进 curX）。
      */
     private static int drawPerChar(Font self, ShanhaiTextParser.Parsed parsed,
-                                   String body, int[] palette, int intPhase, double frac, long now,
+                                   String body, int[] palette, boolean bold,
+                                   int intPhase, double frac, long now,
                                    float curX, float y, int color, boolean shadow,
                                    Matrix4f matrix, MultiBufferSource buffer, Font.DisplayMode mode,
                                    int packedLight, int packedOverlay, boolean[] started) {
         final CharSeq seq = CHAR_SEQ.get();
+        final Style charStyle = bold ? BOLD_STYLE : Style.EMPTY;
         final int bodyLen = body.length();
         int index = 0;
         for (int i = 0; i < bodyLen; ) {
@@ -422,7 +580,7 @@ public final class ShanhaiFontStyleRenderer {
                 cc = ShanhaiTextParser.applyGlitchColor(cc, index, now);
             }
 
-            seq.prepare(cp);
+            seq.prepare(cp, charStyle);
             float adv = self.drawInBatch(seq, curX + xOff, y + yOff, cc, shadow,
                     matrix, buffer, mode, packedLight, packedOverlay);
             curX = adv - xOff;
@@ -443,7 +601,7 @@ public final class ShanhaiFontStyleRenderer {
      * ⇒ 在循环<b>外</b>按「槽位」预计算 {@code Style[]}，循环里只做 {@code styles[k % m]} 下标。
      */
     private static int drawWholeLine(Font self, String body, int[] palette, int len, int bodyLen,
-                                     int intPhase, double frac,
+                                     boolean bold, int intPhase, double frac,
                                      float curX, float y, int color, boolean shadow,
                                      Matrix4f matrix, MultiBufferSource buffer, Font.DisplayMode mode,
                                      int packedLight, int packedOverlay, boolean[] started) {
@@ -455,7 +613,12 @@ public final class ShanhaiFontStyleRenderer {
         final Style[] scratch = STYLES.get().ensure(slots);
         for (int k = 0; k < slots; k++) {
             int rgb = ShanhaiTextPalette.colorForSlot(palette, k, intPhase, frac);
-            scratch[k] = Style.EMPTY.withColor(TextColor.fromRgb(rgb));
+            Style s = Style.EMPTY.withColor(TextColor.fromRgb(rgb));
+            if (bold) {
+                // 加粗与颜色挂在同一个 Style 上 —— 不多一个对象（见类注释 §4.5）。
+                s = s.withBold(Boolean.TRUE);
+            }
+            scratch[k] = s;
         }
 
         final LineSeq seq = LINE_SEQ.get();
@@ -576,14 +739,17 @@ public final class ShanhaiFontStyleRenderer {
      */
     private static final class CharSeq implements FormattedCharSequence {
         private int codepoint;
+        /** 逐字绘制用的样式：{@link Style#EMPTY} 或 {@link #BOLD_STYLE}（加粗时）。 */
+        private Style style = Style.EMPTY;
 
-        void prepare(int codepoint) {
+        void prepare(int codepoint, Style style) {
             this.codepoint = codepoint;
+            this.style = style;
         }
 
         @Override
         public boolean accept(FormattedCharSink sink) {
-            return sink.accept(0, Style.EMPTY, codepoint);
+            return sink.accept(0, style, codepoint);
         }
     }
 

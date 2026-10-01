@@ -17,18 +17,20 @@
 ## 1. 一页构建（已实测）
 
 ```powershell
-$env:JAVA_HOME  = 'C:\Users\david\.jdks\corretto-17\jdk17.0.19_10'   # 必须 JDK 17
-$env:HTTPS_PROXY = 'http://127.0.0.1:6987'                            # GitHub / ForgeGradle 需要
+$env:JAVA_HOME  = '<你的 JDK 17 路径>'      # 必须 JDK 17，例如 ...\corretto-17\jdk17.0.19_10
+$env:HTTPS_PROXY = 'http://127.0.0.1:6987'  # 可选：直连 GitHub / ForgeGradle 失败时才需要（换成你自己的代理地址）
 $env:HTTP_PROXY  = 'http://127.0.0.1:6987'
 
-cd C:\Users\david\Desktop\构建\shanhai重构\shanhai-rewrite
-& 'C:\Users\david\.gradle\wrapper\dists\gradle-8.8-bin\cx57xx7zsiden606ef8ncmv16\gradle-8.8\bin\gradle.bat' `
+cd <仓库路径>\shanhai-rewrite               # 即本 README 所在目录
+& '<你的 Gradle 8.8 路径>\bin\gradle.bat' `
     build -x test --no-daemon
 ```
 
-- 仓库**没有** `gradlew`，只能用上面这个绝对路径的 Gradle 8.8。
+- 仓库**没有** `gradlew`，只能用本机已装的 Gradle 8.8（用绝对路径调它的 `bin\gradle.bat`）。
+  不知道本机路径时：`Get-Command gradle` 看当前解析到哪个；或看 Gradle 发行包里的
+  `wrapper\dists\gradle-8.8-bin\<哈希>\gradle-8.8\bin\gradle.bat`。
 - 产物：`build\libs\shanhai-0.1.0.jar`。
-- ⚠️ **运行**游戏用的是 **Java 21**（`C:\Users\david\.jdks\azul-21.0.12`），与构建 JDK 17 不是同一个，别搞混。
+- ⚠️ **运行**游戏用的是 **Java 21**（`<你的 JDK 21 路径>`），与构建 JDK 17 不是同一个，别搞混。
 
 ---
 

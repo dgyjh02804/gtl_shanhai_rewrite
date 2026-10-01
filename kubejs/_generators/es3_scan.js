@@ -4,6 +4,25 @@
 //    ⇒ 所以第三个状态（"故意插语法错"）必须用【真语法错】做对照，而 Rhino 限制要单独扫。
 'use strict'
 var fs = require('fs')
+var path = require('path')
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔴 路径来源纪律（上传前清理）：本仓库里【不写任何机器绝对路径】。
+//    · 仓库【内】的路径 ⇒ 按【脚本自身位置】(__dirname) 推（不用 process.cwd()）；
+//    · 仓库【外】的路径（游戏实例）⇒ 从环境变量读；缺了就【响亮抛错并退出】。
+// ═══════════════════════════════════════════════════════════════════════════════
+var REPO = path.join(__dirname, '..', '..')          // kubejs\_generators → 仓库根
+function envPath(name, what, example) {
+    var v = process.env[name]
+    if (v === undefined || String(v).trim() === '') {
+        throw new Error('🔴 缺少环境变量 ' + name + '（' + what + '）\n'
+            + '   ⇒ 请先设置它，例如（PowerShell）：$env:' + name + " = '" + example + "'\n"
+            + '   ⇒ 本脚本【拒绝】在缺少它的前提下继续运行：那会拿错路径、静默产出错产物。')
+    }
+    return String(v).trim()
+}
+var INSTANCE = envPath('SH_INSTANCE', '游戏实例的【根目录】（其下有 mods\\ 与 local\\kubejs\\export\\）',
+    'D:\\Minecraft\\versions\\<你的实例目录名>')
 
 function stripCommentsAndStrings(src) {
     var out = ''
@@ -63,8 +82,8 @@ function scan(name, file) {
     return hits.length
 }
 
-var B = 'C:\\Users\\david\\Desktop\\构建\\shanhai重构\\recipe-convert\\'
-var V = 'C:\\Users\\david\\Desktop\\65866652\\日常\\versions\\GTL山海9.10test\\kubejs\\server_scripts\\'
+var B = path.join(REPO, 'recipe-convert') + path.sep
+var V = path.join(INSTANCE, 'kubejs', 'server_scripts') + path.sep
 var n1 = scan('NEW DRAFT', B + 'shanhai_pf_recipes.NEW.js')
 var n2 = scan('OLD LIVE FILE', V + 'shanhai_pf_recipes.js')
 

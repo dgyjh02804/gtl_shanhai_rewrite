@@ -1,0 +1,202 @@
+{
+ "generatedBy": "temp/pmd-ore2/build-decision.mjs（上一轮为 temp/pmd-ore/build-jobs.mjs）",
+ "convention": "输入 = N x 矿物粉；产出 = 全链期望产率 × N（精确整数，无四舍五入）",
+ "NMAX": null,
+ "NMAX_tier1": 64,
+ "MIN_SUM": 0.01,
+ "jobs": [
+  {
+   "id": "shanhai:pmd_ore/gtceu_adamantine_compounds_dust",
+   "inItem": "4x gtceu:adamantine_compounds_dust",
+   "N": 4,
+   "cnName": "精金化合物",
+   "dustId": "gtceu:adamantine_compounds_dust",
+   "srcOres": [
+    "adamantine_compounds"
+   ],
+   "isMain": true,
+   "route": "gtceu/lightning_processor/adamantine_compounds_dust_a.json",
+   "chainLen": 1,
+   "outItems": [
+    "1x gtceu:adamantine_dust"
+   ],
+   "outFluids": [],
+   "outsChn": "精金粉×1",
+   "fluidsChn": "",
+   "perCn": "精金粉 0.25",
+   "sum": 0.25,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/gtceu_endstone_dust",
+   "inItem": "2000x gtceu:endstone_dust",
+   "N": 2000,
+   "cnName": "末地石",
+   "dustId": "gtceu:endstone_dust",
+   "srcOres": [
+    "enderium"
+   ],
+   "isMain": false,
+   "route": "gtceu/centrifuge/endstone_separation.json",
+   "chainLen": 4,
+   "outItems": [
+    "18x gtceu:lithium_dust",
+    "14x gtceu:platinum_dust",
+    "9x gtceu:tungsten_dust"
+   ],
+   "outFluids": [
+    "gtceu:helium 240000"
+   ],
+   "outsChn": "锂粉×18、铂粉×14、钨粉×9",
+   "fluidsChn": "氦 240000mB",
+   "perCn": "氦 0.12、锂粉 0.009、铂粉 0.007、钨粉 0.0045",
+   "sum": 0.1405,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/gtceu_jasper_dust",
+   "inItem": "16x gtceu:jasper_dust",
+   "N": 16,
+   "cnName": "碧玉",
+   "dustId": "gtceu:jasper_dust",
+   "srcOres": [
+    "jasper"
+   ],
+   "isMain": true,
+   "route": "thetornproductionline/extractor/easier_purified_tengam_dust.json",
+   "chainLen": 1,
+   "outItems": [
+    "1x gtceu:purified_tengam_dust"
+   ],
+   "outFluids": [],
+   "outsChn": "纯镃粉×1",
+   "fluidsChn": "",
+   "perCn": "纯镃粉 0.0625",
+   "sum": 0.0625,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/gtceu_monazite_dust",
+   "inItem": "16x gtceu:monazite_dust",
+   "N": 16,
+   "cnName": "独居石",
+   "dustId": "gtceu:monazite_dust",
+   "srcOres": [
+    "bastnasite",
+    "monazite",
+    "rare_earth_metal"
+   ],
+   "isMain": true,
+   "route": "cxhmz/electrolyzer/monazite.json",
+   "chainLen": 1,
+   "outItems": [
+    "1x gtceu:europium_dust",
+    "1x gtceu:samarium_dust",
+    "1x gtceu:dysprosium_dust",
+    "1x gtceu:erbium_dust",
+    "1x gtceu:holmium_dust",
+    "1x gtceu:gadolinium_dust",
+    "1x gtceu:lanthanum_dust",
+    "1x gtceu:yttrium_dust",
+    "1x gtceu:thulium_dust",
+    "1x gtceu:promethium_dust",
+    "1x gtceu:praseodymium_dust",
+    "1x gtceu:ytterbium_dust",
+    "1x gtceu:terbium_dust",
+    "1x gtceu:scandium_dust",
+    "1x gtceu:neodymium_dust",
+    "1x gtceu:lutetium_dust"
+   ],
+   "outFluids": [],
+   "outsChn": "铕粉×1、钐粉×1、镝粉×1、铒粉×1、钬粉×1、钆粉×1、镧粉×1、钇粉×1、铥粉×1、钷粉×1、镨粉×1、镱粉×1、铽粉×1、钪粉×1、钕粉×1、镥粉×1",
+   "fluidsChn": "",
+   "perCn": "铕粉 0.0625、钐粉 0.0625、镝粉 0.0625、铒粉 0.0625、钬粉 0.0625、钆粉 0.0625、镧粉 0.0625、钇粉 0.0625、铥粉 0.0625、钷粉 0.0625、镨粉 0.0625、镱粉 0.0625、铽粉 0.0625、钪粉 0.0625、钕粉 0.0625、镥粉 0.0625",
+   "sum": 1,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/gtceu_raw_tengam_dust",
+   "inItem": "1x gtceu:raw_tengam_dust",
+   "N": 1,
+   "cnName": "生镃",
+   "dustId": "gtceu:raw_tengam_dust",
+   "srcOres": [
+    "jasper"
+   ],
+   "isMain": false,
+   "route": "cxbp/large_chemical_reactor/purified_tengam_dust_fast.json",
+   "chainLen": 1,
+   "outItems": [
+    "1x gtceu:purified_tengam_dust"
+   ],
+   "outFluids": [],
+   "outsChn": "纯镃粉×1",
+   "fluidsChn": "",
+   "perCn": "纯镃粉 1",
+   "sum": 1,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/minecraft_glowstone_dust",
+   "inItem": "120x minecraft:glowstone_dust",
+   "N": 120,
+   "cnName": "荧石",
+   "dustId": "minecraft:glowstone_dust",
+   "srcOres": [
+    "cinnabar",
+    "redstone"
+   ],
+   "isMain": false,
+   "route": "gtceu/centrifuge/glowstone_separation.json",
+   "chainLen": 4,
+   "outItems": [
+    "60x gtceu:gold_dust",
+    "20x gtceu:sulfur_dust",
+    "10x gtceu:iron_dust",
+    "6x gtceu:silicon_dust",
+    "2x gtceu:aluminium_dust",
+    "1x gtceu:chromium_dust"
+   ],
+   "outFluids": [
+    "gtceu:mercury 18000",
+    "gtceu:oxygen 3000"
+   ],
+   "outsChn": "金粉×60、硫粉×20、铁粉×10、硅粉×6、铝粉×2、铬粉×1",
+   "fluidsChn": "汞 18000mB、氧 3000mB",
+   "perCn": "金粉 0.5、硫粉 0.166667、汞 0.15、铁粉 0.083333、硅粉 0.05、氧 0.025、铝粉 0.016667、铬粉 0.008333",
+   "sum": 1,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/trinium_compound_ore",
+   "inItem": "9x #forge:ores/trinium_compound",
+   "N": 9,
+   "cnName": "凯金化合物",
+   "cnFull": "凯金化合物矿石",
+   "dustId": "gtceu:trinium_compound_ore",
+   "srcOres": [
+    "trinium_compound"
+   ],
+   "isMain": true,
+   "route": "gtceu/integrated_ore_processor_1_trinium_compound.json",
+   "chainLen": 2,
+   "outItems": [
+    "64x gtceu:selenium_dust",
+    "64x gtceu:astatine_dust",
+    "72x gtceu:trinium_dust",
+    "72x gtceu:actinium_dust"
+   ],
+   "outFluids": [],
+   "outsChn": "硒粉×64、砹粉×64、凯金粉×72、锕粉×72",
+   "fluidsChn": "",
+   "perCn": "硒粉 7.111111、砹粉 7.111111、凯金粉 8、锕粉 8",
+   "sum": 30.222222,
+   "src": "矿石 × 矿处主产物8粉 × 扭曲仪粉模板",
+   "fallback": {
+    "id": "shanhai:pmd_ore/gtceu_trinium_compound_ore",
+    "inItem": "9x gtceu:trinium_compound_ore",
+    "note": "裸 id 兜底（只覆盖石头变种）"
+   }
+  }
+ ]
+}

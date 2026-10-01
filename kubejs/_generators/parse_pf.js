@@ -3,13 +3,44 @@
 // Discipline: raw occurrence count MUST equal parsed count (no silent drops).
 'use strict'
 var fs = require('fs')
+var path = require('path')
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔴 路径来源纪律（上传前清理）：本仓库里【不写任何机器绝对路径】。
+//    · 仓库【内】的路径 ⇒ 按【脚本自身位置】(__dirname) 推（不用 process.cwd()）；
+//    · 仓库【外】的路径（PF.txt）⇒ 从环境变量读；缺了就【响亮抛错并退出】。
+// ═══════════════════════════════════════════════════════════════════════════════
+var REPO = path.join(__dirname, '..', '..')          // kubejs\_generators → 仓库根
+function envPath(name, what, example) {
+    var v = process.env[name]
+    if (v === undefined || String(v).trim() === '') {
+        throw new Error('🔴 缺少环境变量 ' + name + '（' + what + '）\n'
+            + '   ⇒ 请先设置它，例如（PowerShell）：$env:' + name + " = '" + example + "'\n"
+            + '   ⇒ 本脚本【拒绝】在缺少它的前提下继续运行：那会拿错路径、静默产出错产物。')
+    }
+    return String(v).trim()
+}
+var CONVERT_DIR = path.join(REPO, 'recipe-convert') + path.sep
+// 🔴 必须【先解析环境变量、再注册 exit 钩子】：否则缺变量抛错时，exit 钩子仍会把
+//    空的 OUT 写成 parsed.txt ⇒ 一次失败运行会把上一步的好产物**截成 0 字节**。
+var SRC = envPath('SH_PF_SRC', 'PF.txt（AE2 样板导出的 NBT 文本）的绝对路径',
+    'D:\\path\\to\\PF.txt')
 var OUT = []
 var _log = console.log
 console.log = function () { var a = []; for (var q = 0; q < arguments.length; q++) a.push(arguments[q]); var line = a.join(' '); OUT.push(line); _log(line) }
-process.on('exit', function () { fs.writeFileSync('C:\\Users\\david\\Desktop\\构建\\shanhai重构\\recipe-convert\\parsed.txt', OUT.join('\n'), 'utf8') })
-
-var SRC = 'C:\\Users\\david\\Desktop\\PF.txt'
+process.on('exit', function () { fs.writeFileSync(CONVERT_DIR + 'parsed.txt', OUT.join('\n'), 'utf8') })
 var text = fs.readFileSync(SRC, 'utf8')
+
+// 🔴 2026-09-29 过期防线：本脚本是流水线的【源头那一步】，它读的就是 PF.txt 本体
+//    ⇒ 无需比对；但必须把自己的"源头指纹"打出来并写进产物，供下游比对。
+var PROV = require('./provenance.js')
+var SRC_INFO = PROV.srcNow(SRC)
+console.log('=== 源头指纹（下游产物的过期判据就靠它）===')
+console.log('SRC      = ' + SRC_INFO.srcPath)
+console.log('SHA256   = ' + SRC_INFO.srcSha256)
+console.log('BYTES    = ' + SRC_INFO.srcBytes)
+console.log('MTIME    = ' + SRC_INFO.srcMtime)
+console.log('')
 
 // ---------------------------------------------------------------- tokenizer
 function parse(s) {
@@ -223,6 +254,12 @@ for (var r = 0; r < report.length; r++) {
     }
 }
 
-fs.writeFileSync('C:\\Users\\david\\Desktop\\构建\\shanhai重构\\recipe-convert\\parsed.json', JSON.stringify({ rawCount: rawCount, parsedCount: patterns.length, cells: cells, patterns: report }, null, 1), 'utf8')
+var PARSED_PATH = CONVERT_DIR + 'parsed.json'
+// 🔴 _provenance 必须排在第一个键 ⇒ 落在文件头，人一眼能看到它对应哪一版 PF.txt。
+fs.writeFileSync(PARSED_PATH,
+    JSON.stringify(PROV.embed({ rawCount: rawCount, parsedCount: patterns.length, cells: cells, patterns: report },
+        'kubejs\\_generators\\parse_pf.js', SRC), null, 1), 'utf8')
+var _rec = PROV.record(PARSED_PATH, 'kubejs\\_generators\\parse_pf.js', SRC)
 console.log('')
-console.log('wrote kubejs/generators\\parsed.json')
+console.log('wrote ' + PARSED_PATH + '   (⚠️ 旧版这里印的是 "kubejs/generators\\parsed.json" —— 那是一句过期的错话，实际写的就是上面这个绝对路径)')
+console.log('[PROV] parsed.json 自证: srcSha256=' + _rec.srcSha256 + ' artifactSha256=' + _rec.artifactSha256 + ' bytes=' + _rec.artifactBytes)

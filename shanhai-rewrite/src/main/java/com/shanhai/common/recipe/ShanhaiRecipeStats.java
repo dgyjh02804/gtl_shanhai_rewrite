@@ -1,11 +1,16 @@
 package com.shanhai.common.recipe;
 
 import com.shanhai.ShanhaiMod;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.crafting.Recipe;
+import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
@@ -16,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 山海重构 · <b>「私货配方统计」横幅</b>（原版同名功能的自研重制版）。
@@ -220,6 +224,34 @@ public final class ShanhaiRecipeStats {
     /** 横幅里「回执由谁生成」的署名。<b>是本类自己的名字，不是老版的 {@code DShanhaiRecipeEngine}。</b> */
     public static final String RECEIPT_CLASS_NAME = "ShanhaiRecipeStats";
 
+    // ------------------------------------------------------------------ 🆕 两条按配方类型现数的横幅行（2026-10-01）
+
+    /**
+     * 「原初物质定型」的配方类型 id（= 该类型 lang 键 {@code gtceu.primordial_matter_forming} 去掉 {@code gtceu.}）。
+     *
+     * <p>取证：那 2457 条配方（2026-10-01 起在
+     * {@code kubejs\server_scripts\[server_scripts]shanhai_primordial_forming.js}，
+     * 原先在 jar 内 {@code data/shanhai/recipes/primordial_forming/}）的配方类型逐字是
+     * {@code "gtceu:primordial_matter_forming"}；类型本身在
+     * {@link ShanhaiRecipeTypes#PRIMORDIAL_MATTER_FORMING} 注册。
+     */
+    public static final String TYPE_ID_FORMING = "gtceu:primordial_matter_forming";
+
+    /**
+     * 「原初激光蚀刻」的配方类型 id。
+     *
+     * <p>取证：本工程 {@code assets/shanhai/lang/zh_cn.json} 的 {@code gtceu.primordial_laser_etching}
+     * = 「原初激光蚀刻」；配方由<b>实例侧</b> {@code kubejs\server_scripts\shanhai_lens_goodbye.js}
+     * 注册（283 条，见 {@code handoff\outbound\原初激光蚀刻与蜂群铸造.md}）。
+     */
+    public static final String TYPE_ID_LASER_ETCHING = "gtceu:primordial_laser_etching";
+
+    /** 横幅上这两行的中文标签（与用户点单的用词逐字一致）。 */
+    public static final String TYPE_LABEL_FORMING = "原初物质定型";
+
+    /** 横幅上这两行的中文标签。 */
+    public static final String TYPE_LABEL_LASER = "原初激光蚀刻";
+
     /** 玩家登录后等多少 tick 再发横幅 —— <b>160，照原版</b>（8 秒）。 */
     public static final int BANNER_DELAY_TICKS = 160;
 
@@ -278,51 +310,95 @@ public final class ShanhaiRecipeStats {
     /** {@code &$body_silver-}：银白色板。 */
     public static final String PREFIX_SILVER = "&$body_silver-";
 
+    /**
+     * 🔴 2026-10-01（用户点单 ④）<b>横幅「中间那几行」的样式前缀</b>。
+     *
+     * <p>用户原话（逐字）：「另外，我们配方显示，<b>如图1，中间的字是白的</b>，也可以给他们装上美化
+     * （<b>改成彩色的，但是不要晃动</b>）」。
+     * 他给的图（`attachments\v1\objects\67\673a4ca2…`，941×436）就是<b>这条登录横幅</b>：
+     * 首行/次行/末三行都是流动色，而中间那几行（物质解构 / 正式配方 / 测试配方 / 总数 / 无报错 / 版本）
+     * <b>全是白的</b> —— 本常量就是给它们上色的那一个开关。
+     *
+     * <h4>为什么选 {@code body_golden}</h4>
+     * <ul>
+     *   <li><b>没有效果字符</b>（既不是 {@code ?} glitch 也不是 {@code *} floatX）
+     *       ⇒ 用户那句「<b>不要晃动</b>」是硬要求，这个前缀里一个效果字符都没有
+     *       ⇒ <b>任意两帧里字的位置完全一致</b>（只有颜色在流动）；</li>
+     *   <li>它与横幅首尾那条分隔线是同一族色板（11 色、正文慢速 200ms/格），横幅整体更成一个色系；</li>
+     *   <li>色板本身在 {@link com.shanhai.common.text.ShanhaiTextPalette} 的注册表里
+     *       （{@code body_golden}），不是拼出来的名字 ⇒ 不会退化成白字。</li>
+     * </ul>
+     * ⚠️ <b>只给「中间那几行」用</b>；{@code ⚠️ 失败} 那一行<b>刻意不上色</b>
+     * —— 一条报错被染成流光溢彩会传递错误信号（既有设计，本轮不动）。
+     */
+    public static final String PREFIX_STAT = "&$body_golden-";
+
     /** 版本取不到时的显示串。<b>宁可显示「不可用」，也不显示一个编出来的版本号。</b> */
     public static final String VERSION_UNAVAILABLE = "(不可用)";
 
     // ------------------------------------------------------------------ 累加器
 
-    private static final AtomicLong TOTAL = new AtomicLong();
-    private static final AtomicLong SUCCESS = new AtomicLong();
-    private static final AtomicLong FAILED = new AtomicLong();
+    /**
+     * 🔴 2026-10-01：<b>全部计数器搬到 {@link ShanhaiBatchCounters}</b>（纯算术核，不依赖 Minecraft）。
+     *
+     * <p><b>为什么搬</b>：用户这一轮对着横幅报了「物质解构: <b>1193</b>」而真值是 <b>1154</b>。
+     * 根因是「每批条数」取的是<b>那一刻的 {@code TOTAL} 快照</b>，而 {@code TOTAL} 只有脚本自己调
+     * {@code reset()} 才会清 —— <b>解构脚本是全工程唯一不调 {@code reset()} 的</b>
+     * ⇒ 那一批把别人加过的数一起显示了出来。
+     * <p>修法（口径见 {@link ShanhaiBatchCounters} 类注释）：本批条数 = <b>本次累计 − 上次上报（或上次清零）时的累计</b>。
+     * <p>⚠️ <b>对外签名一个都没改</b>（{@code reset/addResult/reportSummary/total/success/failed/lifetime}
+     * 全部逐字节同签名）——KubeJS 那三个脚本<b>不需要任何改动</b>，也不存在"重载"这个 Rhino 雷区。
+     */
+    private static final ShanhaiBatchCounters CORE = ShanhaiBatchCounters.get();
 
     /**
-     * 🔴 2026-09-27 新增：<b>终身累加器，{@link #reset()} 不清它</b>。
+     * 计数清零。由 KJS 在每次配方加载<b>开始上报之前</b>调一次
+     * —— 否则 {@code /reload} 会让同一条配方被累加两次。
      *
-     * <p>为什么必须单独有一个：{@code TOTAL/SUCCESS/FAILED} 是「当前这一批」的口径，
-     * 谁要报自己那批就先 {@link #reset()}。而 {@code shanhai_deconstruct.js} /
-     * {@code shanhai_pf_recipes.js} / {@code shanhai_test_recipes.js} 三个脚本各自 reset，
-     * <b>后一个会把前一个清掉</b> ⇒ 用那三个数<b>算不出</b>「山海相关全部配方」的总和。
-     *
-     * <p>⇒ 本计数器只在 {@link #addResult(boolean)} 里加、<b>永不清零</b>
-     * ⇒ 任何位置、任何顺序调 {@link #reportSummary(String)} 都拿到<b>同一份</b>
-     * 「自开服以来累计上报了多少条」。这就是「顺序无关」的实现方式：
-     * <b>不靠调用时机，靠一个不被清的累加器</b>。
-     *
-     * <p>⚠️ 口径提醒：它数的仍是「调过 {@link #addResult(boolean)} 的条数」，
-     * 仍然<b>不等于</b>整合包配方总数（宿主脚本不上报）。
+     * <p>注意：本方法和 {@link #addResult(boolean)} {@link #reportSummary(String)} 由 KJS 包在
+     * <b>同一个 try/catch</b> 里连续调用；任何一步抛异常 ⇒ {@link #reportSummary(String)} 不会被调到
+     * ⇒ <b>不会打出那一行</b>。这是刻意的：宁可让机器判定的那一行<b>缺席（响亮失败）</b>，
+     * 也不许打出一行<b>残缺但看起来正常</b>的数字。
      */
-    private static final AtomicLong LIFETIME = new AtomicLong();
+    public static void reset() {
+        CORE.reset();
+    }
 
     /**
-     * 🔴 2026-09-27 新增：<b>按 scope 分批留档</b> —— scope → {total, success, failed}。
+     * 上报<b>一条</b>配方的结果。这是全工程<b>唯一</b>的计数入口（单一数据源）。
      *
-     * <p>为什么需要它：{@code TOTAL/SUCCESS/FAILED} 是<b>全局</b>累加器，谁后报就显示谁 ——
-     * 实测用户看到的横幅「✅ 成功加载: 39 个配方」显示的是<b>最后一次 reportSummary 时的 TOTAL</b>
-     * （脚本顺序是 解构 → PF → 测试 ⇒ 显示测试的 39），<b>既不是 78 也不是 1441</b>，
-     * 读不出「每一批各多少条」。
+     * <p>参数刻意是 {@code boolean} 而不是字符串状态：Rhino 侧只有 `true`/`false` 两种字面量，
+     * <b>不存在拼错状态字符串导致静默记错</b>的可能。也刻意<b>不重载</b>这个方法 ——
+     * Rhino 的重载解析在有多个同签名候选时是踩坑高发区。
      *
-     * <p>实现取巧之处：<b>每批在 reportSummary 之前都先 {@link #reset()} 过</b>
-     * ⇒ 那一刻的 {@code TOTAL} <b>正好就是该批的条数</b> ⇒ 在 {@link #reportSummary(String)} 里
-     * 顺手存一份即可，<b>不需要给 addResult 加 scope 参数、也不需要改任何 KJS 调用点</b>。
+     * @param ok 该配方成功进了 GTCEu recipe builder（true）还是抛了异常（false）
      */
-    private static final Map<String, long[]> BY_SCOPE = new ConcurrentHashMap<>();
+    public static void addResult(boolean ok) {
+        CORE.addResult(ok);
+    }
+
+    /** 🔴 终身累计上报条数（{@link #reset()} 不清）。顺序无关，任何脚本位置读都得到同一个数。 */
+    public static long lifetime() {
+        return CORE.lifetime();
+    }
+
+    public static long total() {
+        return CORE.total();
+    }
+
+    public static long success() {
+        return CORE.success();
+    }
+
+    public static long failed() {
+        return CORE.failed();
+    }
 
     /** scope → 横幅上的中文名。查不到就用 scope 原文（<b>绝不编一个名字</b>）。 */
     private static final Map<String, String> SCOPE_LABELS = Map.of(
             SCOPE_KJS_TEST, "测试配方",
-            "shanhai_pf", "shanhai_pf",
+            // 🔴 2026-09-27 用户点单：横幅上这行原来直接显示英文 scope 名 `shanhai_pf`，改成中文「正式配方」
+            "shanhai_pf", "正式配方",
             "shanhai_deconstruct", "物质解构");
 
     // ------------------------------------------------------------------ 待发横幅
@@ -338,59 +414,13 @@ public final class ShanhaiRecipeStats {
     private ShanhaiRecipeStats() {}
 
     // ================================================================== 累加器 API
-
-    /**
-     * 计数清零。由 KJS 在每次配方加载<b>开始上报之前</b>调一次
-     * —— 否则 {@code /reload} 会让同一条配方被累加两次。
-     *
-     * <p>注意：本方法和 {@link #addResult(boolean)} {@link #reportSummary(String)} 由 KJS 包在
-     * <b>同一个 try/catch</b> 里连续调用；任何一步抛异常 ⇒ {@link #reportSummary(String)} 不会被调到
-     * ⇒ <b>不会打出那一行</b>。这是刻意的：宁可让机器判定的那一行<b>缺席（响亮失败）</b>，
-     * 也不许打出一行<b>残缺但看起来正常</b>的数字。
-     */
-    public static void reset() {
-        TOTAL.set(0L);
-        SUCCESS.set(0L);
-        FAILED.set(0L);
-        // 🔴 刻意【不清】LIFETIME —— 它跨批次累计，是「顺序无关」的基础。
-        //    清了它就等于回到「后一个脚本把前一个清掉」的老问题。
-    }
-
-    /**
-     * 上报<b>一条</b>配方的结果。这是全工程<b>唯一</b>的计数入口（单一数据源）。
-     *
-     * <p>参数刻意是 {@code boolean} 而不是字符串状态：Rhino 侧只有 `true`/`false` 两种字面量，
-     * <b>不存在拼错状态字符串导致静默记错</b>的可能。也刻意<b>不重载</b>这个方法 ——
-     * Rhino 的重载解析在有多个同签名候选时是踩坑高发区。
-     *
-     * @param ok 该配方成功进了 GTCEu recipe builder（true）还是抛了异常（false）
-     */
-    public static void addResult(boolean ok) {
-        TOTAL.incrementAndGet();
-        LIFETIME.incrementAndGet();   // 🔴 终身累加，reset() 不清它
-        if (ok) {
-            SUCCESS.incrementAndGet();
-        } else {
-            FAILED.incrementAndGet();
-        }
-    }
-
-    /** 🔴 终身累计上报条数（{@link #reset()} 不清）。顺序无关，任何脚本位置读都得到同一个数。 */
-    public static long lifetime() {
-        return LIFETIME.get();
-    }
-
-    public static long total() {
-        return TOTAL.get();
-    }
-
-    public static long success() {
-        return SUCCESS.get();
-    }
-
-    public static long failed() {
-        return FAILED.get();
-    }
+    //
+    //  ⛔ 2026-10-01 作废并删除的原文（留档，别往回加）——
+    //     `reset()` 里的 `TOTAL/SUCCESS/FAILED.set(0)`、`addResult()` 里的三个 incrementAndGet()、
+    //     以及 `lifetime()/total()/success()/failed()` 四个 `.get()`。
+    //     它们已整体搬到 `ShanhaiBatchCounters`（纯算术核），本类只做转发：
+    //     上面那 6 个方法（:337–:369）就是转发层，对外签名逐字节未变。
+    //     原因：`BY_SCOPE` 原本存"那一刻的 TOTAL 快照"，而解构脚本不调 reset() ⇒ 显示偏大（1193 vs 1154）。
 
     // ================================================================== 配方加载完成：日志行
 
@@ -412,18 +442,19 @@ public final class ShanhaiRecipeStats {
      */
     public static String reportSummary(String scope) {
         String safeScope = (scope == null || scope.isEmpty()) ? "unknown" : scope;
-        long t = TOTAL.get();
-        long s = SUCCESS.get();
-        long f = FAILED.get();
-        // 🔴 先留档再打印：此刻 TOTAL 正好是【这一批】的条数（该批开头 reset 过）
-        //    ⇒ 横幅据此一行一批地显示，不需要任何 KJS 侧改动。
-        BY_SCOPE.put(safeScope, new long[]{t, s, f});
+        // 🔴 2026-10-01：留档改由纯算术核算【本批】条数（差值法），不再是"那一刻的 TOTAL 快照"。
+        //    修的就是用户报的「物质解构: 1193」（真值 1154）——根因与推演见 ShanhaiBatchCounters 类注释。
+        long[] batch = CORE.closeBatch(safeScope);
+        long t = CORE.total();
+        long s = CORE.success();
+        long f = CORE.failed();
         String line = LOG_PREFIX + " " + STATS_LOG_KEY
                 + " scope=" + safeScope
                 + " total=" + t
                 + " success=" + s
                 + " failed=" + f
-                + " lifetime=" + LIFETIME.get();
+                + " lifetime=" + CORE.lifetime()
+                + " batch=" + batch[0];
         ShanhaiMod.LOGGER.info(line);
         return line;
     }
@@ -509,43 +540,84 @@ public final class ShanhaiRecipeStats {
      * </ol>
      */
     public static List<String> bannerLines() {
-        long failed = FAILED.get();
-        long lifetime = LIFETIME.get();
+        return bannerLinesFor(null);
+    }
 
-        List<String> lines = new ArrayList<>(16);
+    /**
+     * 横幅内容（**逐行发，每行一个 {@link Component}**）。
+     *
+     * <h4>🔴 2026-10-01 用户点单新增的两行（原初物质定型 / 原初激光蚀刻）</h4>
+     * 这两条<b>不来自任何脚本上报</b>，而是<b>在横幅要发的那一刻，从服务器自己的 {@code RecipeManager} 现数</b>
+     * （{@link #countRecipesOfType(MinecraftServer, String)}）。理由有两条，都是硬的：
+     * <ol>
+     *   <li><b>原初物质定型是 KubeJS 配方</b>（2026-10-01 从数据包迁到
+     *       {@code kubejs\server_scripts\[server_scripts]shanhai_primordial_forming.js}，2457 条），
+     *       <b>那个脚本不上报 {@code ShanhaiStats}</b> ⇒ 它不在任何 {@code addResult} 的计数里；</li>
+     *   <li><b>原初激光蚀刻由实例侧的 {@code shanhai_lens_goodbye.js} 创建</b>，那个脚本
+     *       <b>全文不含 {@code ShanhaiStats}</b>（现查：命中 0）⇒ 同样不在任何上报里。</li>
+     * </ol>
+     * ⇒ 唯一的真源就是「配方表里现在到底有几条这个类型的配方」。<b>数不到就显示「(不可用)」，绝不编数字</b>
+     * （本工程铁律：宁可缺，不可假）。
+     *
+     * <h4>🔴 每批条数的口径（2026-10-01 修正）</h4>
+     * 分批那几行取 {@link ShanhaiBatchCounters#batchOf(String)}（= <b>该批自己的真实条数</b>）；
+     * 而「shanhai 相关配方总数」那一行 = <b>终身累计 {@link #lifetime()} ＋ 两条现数行</b>
+     * （{@link #grandTotalOf}）。<b>不再是</b>"只取终身累计" ——
+     * 那正是用户 2026-10-01 报的「这加起来对不上啊」：那两行现数值不走 {@code addResult}，
+     * 不进 LIFETIME，于是总数行比横幅上五行之和少一截。
+     * LIFETIME 自身的累加语义（{@link ShanhaiBatchCounters#reset()} 不清它）<b>不变</b>。
+     */
+    public static List<String> bannerLinesFor(MinecraftServer server) {
+        long failed = CORE.failed();
+        long lifetime = CORE.lifetime();
+
+        List<String> lines = new ArrayList<>(18);
         lines.add(PREFIX_GLITCH_GOLDEN + BAR_TOP);
         lines.add(PREFIX_FLOATX_MOSS + "[OK]配方库 加载完成!");
-        // 🔴 2026-09-27 改：原来这里只有一行「✅ 成功加载: <TOTAL> 个配方」，而 TOTAL 是【全局】累加器
-        //    ⇒ 谁后报就显示谁（实测显示测试的 39）⇒ 读不出"每批各多少条"，用户当场就问了。
-        //    现在改成【一行一批】，数据来自 BY_SCOPE（每次 reportSummary 时留档）。
+        // 🔴 2026-09-27 改：原来这里只有一行「✅ 成功加载: <TOTAL> 个配方」。
+        //    现在改成【一行一批】；2026-10-01 又把「本批条数」的口径修成差值法（见 ShanhaiBatchCounters）。
         //    排序：批条数多的在前；同数按 scope 名字典序（保证两次运行顺序一致，便于比对）。
-        List<String> scopes = new ArrayList<>(BY_SCOPE.keySet());
+        List<String> scopes = CORE.scopes();
         scopes.sort((a, b) -> {
-            long ta = BY_SCOPE.get(a)[0];
-            long tb = BY_SCOPE.get(b)[0];
+            long[] va = CORE.batchOf(a);
+            long[] vb = CORE.batchOf(b);
+            long ta = va == null ? 0L : va[0];
+            long tb = vb == null ? 0L : vb[0];
             return ta != tb ? Long.compare(tb, ta) : a.compareTo(b);
         });
         for (String sc : scopes) {
-            long[] v = BY_SCOPE.get(sc);
+            long[] v = CORE.batchOf(sc);
+            if (v == null) {
+                continue;
+            }
             String label = SCOPE_LABELS.getOrDefault(sc, sc);
-            lines.add("✅ " + label + ": " + v[0] + " 个配方"
+            lines.add(PREFIX_STAT + "✅ " + label + ": " + v[0] + " 个配方"
                     + (v[2] > 0 ? ("（失败 " + v[2] + " 个）") : ""));
         }
         if (scopes.isEmpty()) {
-            // 一批都没上报过（例如 BY_SCOPE 为空）⇒ 说清楚，不编数字、也不显示一个像模像样的 0
-            lines.add("✅ 暂无可统计的配方批次");
+            // 一批都没上报过（例如还没走到配方加载）⇒ 说清楚，不编数字、也不显示一个像模像样的 0
+            lines.add(PREFIX_STAT + "✅ 暂无可统计的配方批次");
         }
-        // 🔴 山海相关【全部】配方的汇总（解构 + PF + 测试 + 未来任何上报方）。
-        //    取 LIFETIME（不被 reset 清零）⇒ 横幅在玩家登录后 160 tick 才发，
-        //    此时各脚本都上报完了 ⇒ 这个数就是用户要的「shanhai 相关所有配方」。
+        // 🆕 2026-10-01（用户点单）：这两条按【配方类型】现数，不依赖任何脚本上报。
+        //    🔴 现数值先落到局部变量：「总数」那一行要【复用】它们 —— 不许为了总数再遍历一次配方表。
+        final long liveForming = countRecipesOfType(server, TYPE_ID_FORMING);
+        final long liveLaser = countRecipesOfType(server, TYPE_ID_LASER_ETCHING);
+        lines.add(recipeTypeCountLine(TYPE_LABEL_FORMING, liveForming));
+        lines.add(recipeTypeCountLine(TYPE_LABEL_LASER, liveLaser));
+        // 🔴 山海相关【全部】配方的汇总 = 【横幅上五行之和】。
+        //    用户原话（2026-10-01）：「我还发现个bug，这加起来对不上啊」——
+        //    根因：上面那两行是【发横幅这一刻从配方表现数】的 ⇒ 不走 addResult ⇒ 不进 LIFETIME，
+        //    于是"总数"少算了它们（实例实测：五行之和 2748，而总数行印 1279 = 1154+86+39）。
+        //    ⇒ 现行口径 = {@link #grandTotalOf}(KJS 三批的 LIFETIME, 刚现数的这两行)（用户拍板 A）。
+        //    ⚠️ LIFETIME 的「随 /reload 累加、不被 reset 清零」语义【不变】（用户没要求改它）。
         //    ⚠️ 运行期读，代码里没有任何写死的数字。
-        lines.add("🔷 shanhai 相关配方总数: " + lifetime);
+        lines.add(PREFIX_STAT + "🔷 shanhai 相关配方总数: " + grandTotalText(lifetime, liveForming, liveLaser));
         if (failed > 0) {
             lines.add("⚠️ 失败: " + failed + " 个");
         } else {
-            lines.add("😊 配方库检测无报错 祝领航员航行无阻!");
+            lines.add(PREFIX_STAT + "😊 配方库检测无报错 祝领航员航行无阻!");
         }
-        lines.add("🔷 当前重制版版本: " + modVersion());
+        lines.add(PREFIX_STAT + "🔷 当前重制版版本: " + modVersion());
         lines.add(PREFIX_AURORA + "欢迎来到GTL寰宇联合重工巨企");
         lines.add(PREFIX_MOSS + "此成功信息回执由JAVA侧: " + RECEIPT_CLASS_NAME + " 生成");
         lines.add(PREFIX_SILVER + "老大我们这样熬夜写私货心脏真的不会自己先休息吗");
@@ -553,14 +625,156 @@ public final class ShanhaiRecipeStats {
         return lines;
     }
 
+    /** 一条「配方类型 → 条数」的横幅行。<b>数不到（-1）就显示「(不可用)」，绝不编一个 0</b>。 */
+    private static String recipeTypeCountLine(String label, long count) {
+        return count < 0L
+                ? (PREFIX_STAT + "✅ " + label + ": (不可用)")
+                : (PREFIX_STAT + "✅ " + label + ": " + count + " 个配方");
+    }
+
+    /**
+     * 横幅「🔷 shanhai 相关配方总数」那一行的<b>纯算术核</b>（用户 2026-10-01 拍板 A）。
+     *
+     * <p>口径 = <b>【三批 KJS 上报的终身累计 LIFETIME】＋【两行现数值】</b>，
+     * 也就是「横幅上五行之和」。判据：横幅印的总数 <b>必须</b>等于上面五行相加 ——
+     * 用户就是拿这个发现旧实现漏算的（旧实现只印 LIFETIME，不含那两行现数值）。
+     *
+     * <p>🔴 这里是<b>纯算术</b>：不读配方表、不读计数器、不写任何状态 ⇒ 离线就能验
+     * （{@code node tools\check-pf-declared-vs-disk.mjs --banner <文件>} 用的就是同一条算式）。
+     *
+     * @return {@code kjsLifetime + formingCount + laserCount}；两行里<b>任一行取不到（&lt;0）
+     *         ⇒ 返回 -1</b>（调用方按「不可用」显示：只知道自己那一半的和就印出来，等于印一个假总数）
+     */
+    static long grandTotalOf(long kjsLifetime, long formingCount, long laserCount) {
+        if (formingCount < 0L || laserCount < 0L) {
+            return -1L;
+        }
+        return kjsLifetime + formingCount + laserCount;
+    }
+
+    /** {@link #grandTotalOf} 的显示形式：{@code -1} ⇒ {@link #VERSION_UNAVAILABLE}（「(不可用)」）。 */
+    private static String grandTotalText(long kjsLifetime, long formingCount, long laserCount) {
+        final long t = grandTotalOf(kjsLifetime, formingCount, laserCount);
+        return t < 0L ? VERSION_UNAVAILABLE : String.valueOf(t);
+    }
+
+    /**
+     * 横幅上那几条「✅ &lt;批名&gt;: N 个配方」的<b>条数之和</b>（= 各批 {@link ShanhaiBatchCounters#batchOf}
+     * 的第 0 项相加）。
+     *
+     * <p>只给启动期那行日志用：把「总数 == 五行之和」这件事变成<b>一行可比对的读数</b>
+     * （{@code banner_rows_sum=… banner_total=…}），不必等玩家登录看横幅。
+     * 只遍历 batch 留档（几条），<b>不遍历配方表</b>。
+     */
+    static long batchRowsSum() {
+        long sum = 0L;
+        for (String sc : CORE.scopes()) {
+            final long[] v = CORE.batchOf(sc);
+            if (v != null) {
+                sum += v[0];
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * <b>数出「服务器现在的配方表里，这个类型有几条」</b>（横幅新增两行的唯一数据源）。
+     *
+     * <p>实现取 `RecipeManager#getRecipes()` 后按<b>类型句柄身份</b>过滤，
+     * 而不是 `byType(RecipeType)` —— 后者在 1.20.1 是 <b>private</b>
+     * （取证：{@code javap -p net.minecraft.world.item.crafting.RecipeManager} 里
+     * {@code private byType(...)}；公开的只有 {@code getRecipesFor(...)} 与 {@code getRecipes()}）。
+     * 类型句柄从 {@code BuiltInRegistries.RECIPE_TYPE} 取，与配方自己的 {@code getType()} 是同一批注册对象
+     * ⇒ 引用相等比较成立。
+     *
+     * @return 条数；<b>服务器为 null / 类型没注册 / 取不到配方表 ⇒ -1</b>（调用方必须当成「不可用」）
+     */
+    public static long countRecipesOfType(MinecraftServer server, String fullTypeId) {
+        if (server == null || fullTypeId == null) {
+            return -1L;
+        }
+        try {
+            RecipeType<?> type = BuiltInRegistries.RECIPE_TYPE.get(new ResourceLocation(fullTypeId));
+            if (type == null) {
+                return -1L;
+            }
+            long n = 0L;
+            for (Recipe<?> recipe : server.getRecipeManager().getRecipes()) {
+                if (recipe.getType() == type) {
+                    n++;
+                }
+            }
+            return n;
+        } catch (Throwable t) {
+            return -1L;
+        }
+    }
+
     /** 给玩家逐行发横幅。{@code null} 玩家静默跳过（调用方本来就会判，这里再加一道）。 */
     public static void sendBannerTo(ServerPlayer player) {
         if (player == null) {
             return;
         }
-        for (String line : bannerLines()) {
+        // 🔴 2026-10-01：横幅要多算两条「按配方类型现数」的行 ⇒ 必须拿到服务器（配方表在它身上）。
+        for (String line : bannerLinesFor(player.getServer())) {
             player.sendSystemMessage(Component.literal(line));
         }
+    }
+
+    /**
+     * <b>服务器完全起来之后</b>打两行机器可判的日志。
+     *
+     * <p>为什么要这个钩子：横幅本身<b>只有玩家登录才发</b>，而无头专服没有玩家
+     * ⇒ 「新增两行的数字对不对」在冒烟里<b>永远看不到</b>。这两行把同一份计算搬到启动期，
+     * 于是「冒烟日志」就能给出判据（用户原话与冒烟纪律见 handoff）。
+     *
+     * <pre>
+     * [SHANHAI-SPEC] batch_counters_selftest ok cases=8（…）           ← 或 batch_counters_selftest FAILED: …
+     * [SHANHAI-SPEC] recipe_type_counts gtceu:primordial_matter_forming=2457 gtceu:primordial_laser_etching=283
+     * [SHANHAI-SPEC] banner_total_check banner_rows_sum=1279 kjs_lifetime=1279 live_forming=2457 live_laser=283 banner_total=4019 identity=OK
+     * </pre>
+     *
+     * <p>第三行 = 判据「横幅总数 == 五行之和」的机器可比对读数（{@code 4019 = 1279 ＋ 2457 ＋ 283}）。
+     * ⚠️ 样例里的批次数字（1279 / 283）取自用户 2026-10-01 的横幅截图，<b>不是本轮实测</b>
+     * （本轮禁止启动游戏）；{@code identity=DIFF} 才说明口径分叉，{@code OK} 说明五行相加对得上。
+     *
+     * <h4>🔴 自检失败为什么只 ERROR 不抛（与本工程 ShanhaiConcurrencyTables.selfTest 的做法不同）</h4>
+     * 那条先例是在<b>机器注册期</b>抛异常；本处是<b>服务器已启动</b>，抛出去等于把用户的存档会话当场打断，
+     * 而失败的对象只是「横幅上两个数字算得对不对」。
+     * 本工程的冒烟判据是「含 {@code shanhai} 的 {@code /ERROR]} 行 = 0」⇒ <b>这里打 ERROR 就已经会被机器判红</b>，
+     * 响亮程度等价，爆炸半径小得多。（自检本身已在离线三段自证里验过：
+     * {@code java BatchProof new/old/new} ⇒ 0 / 1 / 0。）
+     */
+    @SubscribeEvent
+    public static void onServerStarted(net.minecraftforge.event.server.ServerStartedEvent event) {
+        try {
+            ShanhaiMod.LOGGER.info(ShanhaiBatchCounters.selfTest());
+        } catch (Throwable t) {
+            ShanhaiMod.LOGGER.error(LOG_PREFIX + " batch_counters_selftest FAILED: " + t);
+        }
+        MinecraftServer server = event.getServer();
+        // 派发时的 scope 摘要（人读用；冒烟日志里能一眼看出每批各多少条）
+        ShanhaiMod.LOGGER.info(LOG_PREFIX + " batch_summary " + CORE.summary());
+        // 🔴 现数值只算一次，下面两行【复用】它 —— 与横幅同一口径（见 grandTotalOf 的注释）。
+        //    这里不新增遍历：横幅那边也是各算一次，两边都只遍历一遍配方表。
+        final long liveForming = countRecipesOfType(server, TYPE_ID_FORMING);
+        final long liveLaser = countRecipesOfType(server, TYPE_ID_LASER_ETCHING);
+        ShanhaiMod.LOGGER.info(LOG_PREFIX + " recipe_type_counts "
+                + TYPE_ID_FORMING + "=" + liveForming
+                + " " + TYPE_ID_LASER_ETCHING + "=" + liveLaser);
+        // 🔴 判据「横幅总数 == 五行之和」的启动期读数（横幅要等玩家登录才发 ⇒ 冒烟日志里看不见，这里补上）：
+        //    banner_rows_sum = 那几条「✅ <批名>: N 个配方」的和
+        //    banner_total    = LIFETIME ＋ 上面两行现数值（= 横幅那一行真正会印的数）
+        //    identity=DIFF ⇒ 两者对不上，说明"总数"与横幅五行之和的口径又分叉了（必须查）。
+        final long rowsSum = batchRowsSum();
+        final long kjsLifetime = CORE.lifetime();
+        final long bannerTotal = grandTotalOf(kjsLifetime, liveForming, liveLaser);
+        ShanhaiMod.LOGGER.info(LOG_PREFIX + " banner_total_check banner_rows_sum=" + rowsSum
+                + " kjs_lifetime=" + kjsLifetime
+                + " live_forming=" + liveForming + " live_laser=" + liveLaser
+                + " banner_total=" + (bannerTotal < 0L ? VERSION_UNAVAILABLE : bannerTotal)
+                + " identity=" + (bannerTotal >= 0L && bannerTotal == rowsSum + liveForming + liveLaser
+                        ? "OK" : "DIFF"));
     }
 
     /**

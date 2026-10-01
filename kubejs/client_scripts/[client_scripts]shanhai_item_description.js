@@ -100,3 +100,64 @@ ItemEvents.tooltip(event => {
         "&abcd - 有 & 没有 $ ⇒ 原样"
     ])
 })
+
+// =============================================================================
+// §6 【2026-09-28 新增】世线残片 ×8 + 物质模块 ×17 的描述
+//
+//   用户原话（逐字）：
+//     「还有，把提供的跨配方并行（线程）数写在世线残片的描述中，
+//       并且把提供的并行数补充在各等级物质模块的描述中」
+//
+//   🔴 单一真源原则（本机血账：同一个数写两份必然漂移）：
+//     这里【一个数字都不手写】—— 全部 `Java.loadClass` 到 Java 侧那张权威表
+//     `com.shanhai.common.thread.ShanhaiConcurrencyTables` 现读：
+//       · 机器算线程用的是同一张表（`finalThreads`）
+//       · 所以"描述里写的" 与 "机器真正算的" 是同一份数据，不可能对不上
+//     那个类是【纯 java.util】的（连 ShanhaiMod 都不引用）⇒ 加载它不会触发任何游戏注册表。
+//
+//   ⚠️ 失败可见性：client_scripts 只在【客户端】跑，无头专服冒烟证明不了这一段。
+//     若 loadClass 失败（例如将来有人改动类名/包名），下面会打一条 console.error，
+//     在 `<实例>\logs\kubejs\client.log` 里可 grep「[SHANHAI-DESC]」——
+//     "没扫到" 与 "没发生" 必须能分开。届时物品会【少掉描述】而不是显示错数字（宁可缺，不可假）。
+// =============================================================================
+
+var SHANHAI_CONC = null
+var SHANHAI_CONC_ERR = ""
+try {
+    SHANHAI_CONC = Java.loadClass("com.shanhai.common.thread.ShanhaiConcurrencyTables")
+} catch (e) {
+    SHANHAI_CONC = null
+    SHANHAI_CONC_ERR = "" + e
+}
+
+/** Java 侧返回的是「多行用一个 \n 拼起来的单个字符串」，这里拆成 KubeJS 要的数组。 */
+function shanhaiLines(s) {
+    return ("" + s).split("\n")
+}
+
+ItemEvents.tooltip(event => {
+    if (SHANHAI_CONC == null) {
+        console.error("[SHANHAI-DESC] 无法加载 com.shanhai.common.thread.ShanhaiConcurrencyTables ⇒ "
+            + "世线残片与物质模块的描述【不会显示】。原因：" + SHANHAI_CONC_ERR)
+        return
+    }
+
+    var shardN = 0
+    var moduleN = 0
+
+    // ① 8 种世线残片：写明各自提供的跨配方并行（线程）
+    for (var i = 0; i < SHANHAI_CONC.shardCount(); i++) {
+        event.add(SHANHAI_CONC.shardIdAt(i), shanhaiLines(SHANHAI_CONC.shardDescription(i)))
+        shardN = shardN + 1
+    }
+
+    // ② 17 个物质模块：补上"提供的并行数"（两档并行表都写，避免与机器对不上）
+    for (var j = 0; j < SHANHAI_CONC.moduleCount(); j++) {
+        event.add(SHANHAI_CONC.moduleIdAt(j), shanhaiLines(SHANHAI_CONC.moduleDescription(j)))
+        moduleN = moduleN + 1
+    }
+
+    // 单向证据行：证明这段真的跑过（而不是"没扫到"）
+    console.info("[SHANHAI-DESC] 已挂载描述：世线残片 " + shardN + " 种 + 物质模块 " + moduleN + " 种"
+        + "（数字全部现读自 Java 的 ShanhaiConcurrencyTables，KJS 侧无手写数字表）")
+})

@@ -1,0 +1,1413 @@
+{
+ "generatedBy": "temp/pmd-ore2/build-decision.mjs（口径见文件头；上一轮为 temp/pmd-ore/apply-overrides.mjs）",
+ "gates": {
+  "MIN_SUM": 0.01,
+  "MAX_SUM": 4,
+  "NMAX_tier1": 64,
+  "G3": "必须精确整数配比；N ≤ 64 优先，否则用精确 N（无上限）",
+  "G4": "新值元素集合 ⊇ 旧值元素集合（旧值中的自环项已剔除）",
+  "distort": "深度化学扭曲仪配比优先（仅当其 N 更小时）"
+ },
+ "overrides": {
+  "shanhai:deconstruct/gtceu_almandine_dust": {
+   "inItem": "20x gtceu:almandine_dust",
+   "outItems": [
+    "3x gtceu:iron_dust",
+    "3x gtceu:silicon_dust",
+    "2x gtceu:aluminium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 12000"
+   ],
+   "cn": "铁铝榴石",
+   "src": "全链产率",
+   "ev": "铁铝榴石粉 输入=20x gtceu:almandine_dust 产出=铁粉×3、硅粉×3、铝粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、铁粉 0.15、硅粉 0.15、铝粉 0.1"
+  },
+  "shanhai:deconstruct/gtceu_alunite_dust": {
+   "inItem": "26x gtceu:alunite_dust",
+   "outItems": [
+    "3x gtceu:aluminium_dust",
+    "2x gtceu:silicon_dust",
+    "1x gtceu:potassium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 14000",
+    "gtceu:hydrogen 6000"
+   ],
+   "cn": "明矾石",
+   "src": "全链产率",
+   "ev": "明矾石粉 输入=26x gtceu:alunite_dust 产出=铝粉×3、硅粉×2、钾粉×1、氧 14000mB、氢 6000mB | 来源=全链产率 | 每1粉=氧 0.538462、氢 0.230769、铝粉 0.115385、硅粉 0.076923、钾粉 0.038462"
+  },
+  "shanhai:deconstruct/gtceu_amethyst_dust": {
+   "inItem": "15x gtceu:amethyst_dust",
+   "outItems": [
+    "4x gtceu:silicon_dust",
+    "3x gtceu:iron_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 8000"
+   ],
+   "cn": "紫水晶",
+   "src": "全链产率",
+   "ev": "紫水晶粉 输入=15x gtceu:amethyst_dust 产出=硅粉×4、铁粉×3、氧 8000mB | 来源=全链产率 | 每1粉=氧 0.533333、硅粉 0.266667、铁粉 0.2"
+  },
+  "shanhai:deconstruct/gtceu_andradite_dust": {
+   "inItem": "20x gtceu:andradite_dust",
+   "outItems": [
+    "3x gtceu:calcium_dust",
+    "3x gtceu:silicon_dust",
+    "2x gtceu:iron_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 12000"
+   ],
+   "cn": "钙铁榴石",
+   "src": "全链产率",
+   "ev": "钙铁榴石粉 输入=20x gtceu:andradite_dust 产出=钙粉×3、硅粉×3、铁粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、钙粉 0.15、硅粉 0.15、铁粉 0.1"
+  },
+  "shanhai:deconstruct/gtceu_antimony_trioxide_dust": {
+   "inItem": "5x gtceu:antimony_trioxide_dust",
+   "outItems": [
+    "2x gtceu:antimony_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 3000"
+   ],
+   "cn": "三氧化二锑",
+   "src": "全链产率",
+   "ev": "三氧化二锑粉 输入=5x gtceu:antimony_trioxide_dust 产出=锑粉×2、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、锑粉 0.4"
+  },
+  "shanhai:deconstruct/gtceu_asbestos_dust": {
+   "inItem": "18x gtceu:asbestos_dust",
+   "outItems": [
+    "3x gtceu:magnesium_dust",
+    "2x gtceu:silicon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 9000",
+    "gtceu:hydrogen 4000"
+   ],
+   "cn": "石棉",
+   "src": "全链产率",
+   "ev": "石棉粉 输入=18x gtceu:asbestos_dust 产出=镁粉×3、硅粉×2、氧 9000mB、氢 4000mB | 来源=全链产率 | 每1粉=氧 0.5、氢 0.222222、镁粉 0.166667、硅粉 0.111111"
+  },
+  "shanhai:deconstruct/gtceu_barite_dust": {
+   "inItem": "6x gtceu:barite_dust",
+   "outItems": [
+    "1x gtceu:barium_dust",
+    "1x gtceu:sulfur_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 4000"
+   ],
+   "cn": "重晶石",
+   "src": "全链产率",
+   "ev": "重晶石粉 输入=6x gtceu:barite_dust 产出=钡粉×1、硫粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.666667、钡粉 0.166667、硫粉 0.166667"
+  },
+  "shanhai:deconstruct/gtceu_basalt_dust": {
+   "inItem": "4800x gtceu:basalt_dust",
+   "outItems": [
+    "840x gtceu:silicon_dust",
+    "180x gtceu:calcium_dust",
+    "180x gtceu:carbon_dust",
+    "120x gtceu:magnesium_dust",
+    "60x gtceu:iron_dust",
+    "25x gtceu:germanium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 2220000",
+    "gtceu:carbon 144000"
+   ],
+   "cn": "玄武岩",
+   "src": "全链产率",
+   "ev": "玄武岩粉 输入=4800x gtceu:basalt_dust 产出=硅粉×840、钙粉×180、碳粉×180、镁粉×120、铁粉×60、锗粉×25、氧 2220000mB、碳 144000mB | 来源=全链产率 | 每1粉=氧 0.4625、硅粉 0.175、钙粉 0.0375、碳粉 0.0375、碳 0.03、镁粉 0.025、铁粉 0.0125、锗粉 0.005208"
+  },
+  "shanhai:deconstruct/gtceu_basaltic_mineral_sand_dust": {
+   "inItem": "67200x gtceu:basaltic_mineral_sand_dust",
+   "outItems": [
+    "14820x gtceu:iron_dust",
+    "5880x gtceu:silicon_dust",
+    "1260x gtceu:calcium_dust",
+    "1260x gtceu:carbon_dust",
+    "840x gtceu:magnesium_dust",
+    "175x gtceu:germanium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 34740000",
+    "gtceu:carbon 1008000"
+   ],
+   "cn": "玄武岩矿砂",
+   "src": "全链产率",
+   "ev": "玄武岩矿砂粉 输入=67200x gtceu:basaltic_mineral_sand_dust 产出=铁粉×14820、硅粉×5880、钙粉×1260、碳粉×1260、镁粉×840、锗粉×175、氧 34740000mB、碳 1008000mB | 来源=全链产率 | 每1粉=氧 0.516964、铁粉 0.220536、硅粉 0.0875、钙粉 0.01875、碳粉 0.01875、碳 0.015、镁粉 0.0125、锗粉 0.002604"
+  },
+  "shanhai:deconstruct/gtceu_bauxite_dust": {
+   "inItem": "15x gtceu:bauxite_dust",
+   "outItems": [
+    "6x gtceu:aluminium_dust",
+    "1x gtceu:titanium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 11000"
+   ],
+   "cn": "铝土矿",
+   "src": "全链产率",
+   "ev": "铝土矿粉 输入=15x gtceu:bauxite_dust 产出=铝粉×6、钛粉×1、氧 11000mB | 来源=全链产率 | 每1粉=氧 0.733333、铝粉 0.4、钛粉 0.066667"
+  },
+  "shanhai:deconstruct/gtceu_bentonite_dust": {
+   "inItem": "6000x gtceu:bentonite_dust",
+   "outItems": [
+    "2400x gtceu:silicon_dust",
+    "1200x gtceu:magnesium_dust",
+    "200x gtceu:sodium_dust"
+   ],
+   "outFluids": [
+    "gtceu:hydrogen 1202000",
+    "gtceu:oxygen 1000"
+   ],
+   "cn": "膨润土",
+   "src": "全链产率",
+   "ev": "膨润土粉 输入=6000x gtceu:bentonite_dust 产出=硅粉×2400、镁粉×1200、钠粉×200、氢 1202000mB、氧 1000mB | 来源=全链产率 | 每1粉=硅粉 0.4、氢 0.200333、镁粉 0.2、钠粉 0.033333、氧 0.000167"
+  },
+  "shanhai:deconstruct/gtceu_blue_topaz_dust": {
+   "inItem": "13x gtceu:blue_topaz_dust",
+   "outItems": [
+    "2x gtceu:aluminium_dust",
+    "1x gtceu:silicon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 6000",
+    "gtceu:fluorine 2000",
+    "gtceu:hydrogen 2000"
+   ],
+   "cn": "蓝黄玉",
+   "src": "全链产率",
+   "ev": "蓝黄玉粉 输入=13x gtceu:blue_topaz_dust 产出=铝粉×2、硅粉×1、氧 6000mB、氟 2000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.461538、铝粉 0.153846、氟 0.153846、氢 0.153846、硅粉 0.076923"
+  },
+  "shanhai:deconstruct/gtceu_borax_dust": {
+   "inItem": "2300x gtceu:borax_dust",
+   "outItems": [
+    "400x gtceu:boron_dust",
+    "200x gtceu:sodium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 701000",
+    "gtceu:hydrogen 2000"
+   ],
+   "cn": "硼砂",
+   "src": "全链产率",
+   "ev": "硼砂粉 输入=2300x gtceu:borax_dust 产出=硼粉×400、钠粉×200、氧 701000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.304783、硼粉 0.173913、钠粉 0.086957、氢 0.00087"
+  },
+  "shanhai:deconstruct/gtceu_bornite_dust": {
+   "inItem": "10x gtceu:bornite_dust",
+   "outItems": [
+    "5x gtceu:copper_dust",
+    "4x gtceu:sulfur_dust",
+    "1x gtceu:iron_dust"
+   ],
+   "outFluids": [],
+   "cn": "斑铜矿",
+   "src": "全链产率",
+   "ev": "斑铜矿粉 输入=10x gtceu:bornite_dust 产出=铜粉×5、硫粉×4、铁粉×1 | 来源=全链产率 | 每1粉=铜粉 0.5、硫粉 0.4、铁粉 0.1"
+  },
+  "shanhai:deconstruct/gtceu_calcite_dust": {
+   "inItem": "5x gtceu:calcite_dust",
+   "outItems": [
+    "1x gtceu:calcium_dust",
+    "1x gtceu:carbon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 3000"
+   ],
+   "cn": "方解石",
+   "src": "全链产率",
+   "ev": "方解石粉 输入=5x gtceu:calcite_dust 产出=钙粉×1、碳粉×1、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、钙粉 0.2、碳粉 0.2"
+  },
+  "shanhai:deconstruct/gtceu_cassiterite_dust": {
+   "inItem": "3x gtceu:cassiterite_dust",
+   "outItems": [
+    "1x gtceu:tin_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 2000"
+   ],
+   "cn": "锡石",
+   "src": "全链产率",
+   "ev": "锡石粉 输入=3x gtceu:cassiterite_dust 产出=锡粉×1、氧 2000mB | 来源=全链产率 | 每1粉=氧 0.666667、锡粉 0.333333"
+  },
+  "shanhai:deconstruct/gtceu_cassiterite_sand_dust": {
+   "inItem": "3x gtceu:cassiterite_sand_dust",
+   "outItems": [
+    "1x gtceu:tin_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 2000"
+   ],
+   "cn": "锡石矿砂",
+   "src": "全链产率",
+   "ev": "锡石矿砂粉 输入=3x gtceu:cassiterite_sand_dust 产出=锡粉×1、氧 2000mB | 来源=全链产率 | 每1粉=氧 0.666667、锡粉 0.333333"
+  },
+  "shanhai:deconstruct/gtceu_celestine_dust": {
+   "inItem": "6x gtceu:celestine_dust",
+   "outItems": [
+    "1x gtceu:strontium_dust",
+    "1x gtceu:sulfur_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 4000"
+   ],
+   "cn": "天青石",
+   "src": "全链产率",
+   "ev": "天青石粉 输入=6x gtceu:celestine_dust 产出=锶粉×1、硫粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.666667、锶粉 0.166667、硫粉 0.166667"
+  },
+  "shanhai:deconstruct/gtceu_chalcocite_dust": {
+   "inItem": "3x gtceu:chalcocite_dust",
+   "outItems": [
+    "2x gtceu:copper_dust",
+    "1x gtceu:sulfur_dust"
+   ],
+   "outFluids": [],
+   "cn": "辉铜矿",
+   "src": "全链产率",
+   "ev": "辉铜矿粉 输入=3x gtceu:chalcocite_dust 产出=铜粉×2、硫粉×1 | 来源=全链产率 | 每1粉=铜粉 0.666667、硫粉 0.333333"
+  },
+  "shanhai:deconstruct/gtceu_chalcopyrite_dust": {
+   "inItem": "4x gtceu:chalcopyrite_dust",
+   "outItems": [
+    "2x gtceu:sulfur_dust",
+    "1x gtceu:copper_dust",
+    "1x gtceu:iron_dust"
+   ],
+   "outFluids": [],
+   "cn": "黄铜矿",
+   "src": "全链产率",
+   "ev": "黄铜矿粉 输入=4x gtceu:chalcopyrite_dust 产出=硫粉×2、铜粉×1、铁粉×1 | 来源=全链产率 | 每1粉=硫粉 0.5、铜粉 0.25、铁粉 0.25"
+  },
+  "shanhai:deconstruct/gtceu_chromite_dust": {
+   "inItem": "7x gtceu:chromite_dust",
+   "outItems": [
+    "2x gtceu:chromium_dust",
+    "1x gtceu:iron_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 4000"
+   ],
+   "cn": "铬铁矿",
+   "src": "全链产率",
+   "ev": "铬铁矿粉 输入=7x gtceu:chromite_dust 产出=铬粉×2、铁粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.571429、铬粉 0.285714、铁粉 0.142857"
+  },
+  "shanhai:deconstruct/gtceu_cinnabar_dust": {
+   "inItem": "2x gtceu:cinnabar_dust",
+   "outItems": [
+    "1x gtceu:sulfur_dust"
+   ],
+   "outFluids": [
+    "gtceu:mercury 1000"
+   ],
+   "cn": "朱砂",
+   "src": "全链产率",
+   "ev": "朱砂粉 输入=2x gtceu:cinnabar_dust 产出=硫粉×1、汞 1000mB | 来源=全链产率 | 每1粉=硫粉 0.5、汞 0.5"
+  },
+  "shanhai:deconstruct/gtceu_clay_dust": {
+   "inItem": "6500x gtceu:clay_dust",
+   "outItems": [
+    "1000x gtceu:sodium_dust",
+    "1000x gtceu:aluminium_dust",
+    "1000x gtceu:silicon_dust",
+    "500x gtceu:lithium_dust"
+   ],
+   "outFluids": [
+    "gtceu:hydrogen 6000",
+    "gtceu:oxygen 3000"
+   ],
+   "cn": "黏土",
+   "src": "全链产率",
+   "ev": "黏土粉 输入=6500x gtceu:clay_dust 产出=钠粉×1000、铝粉×1000、硅粉×1000、锂粉×500、氢 6000mB、氧 3000mB | 来源=全链产率 | 每1粉=钠粉 0.153846、铝粉 0.153846、硅粉 0.153846、锂粉 0.076923、氢 0.000923、氧 0.000462"
+  },
+  "shanhai:deconstruct/gtceu_coal_dust": {
+   "inItem": "1x gtceu:coal_dust",
+   "outItems": [
+    "2x gtceu:carbon_dust"
+   ],
+   "outFluids": [],
+   "cn": "煤炭",
+   "src": "全链产率",
+   "ev": "煤炭粉 输入=1x gtceu:coal_dust 产出=碳粉×2 | 来源=全链产率 | 每1粉=碳粉 2"
+  },
+  "shanhai:deconstruct/gtceu_cobalt_oxide_dust": {
+   "inItem": "2x gtceu:cobalt_oxide_dust",
+   "outItems": [
+    "1x gtceu:cobalt_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 1000"
+   ],
+   "cn": "氧化钴",
+   "src": "全链产率",
+   "ev": "氧化钴粉 输入=2x gtceu:cobalt_oxide_dust 产出=钴粉×1、氧 1000mB | 来源=全链产率 | 每1粉=钴粉 0.5、氧 0.5"
+  },
+  "shanhai:deconstruct/gtceu_cobaltite_dust": {
+   "inItem": "3x gtceu:cobaltite_dust",
+   "outItems": [
+    "1x gtceu:cobalt_dust",
+    "1x gtceu:arsenic_dust",
+    "1x gtceu:sulfur_dust"
+   ],
+   "outFluids": [],
+   "cn": "辉钴矿",
+   "src": "全链产率",
+   "ev": "辉钴矿粉 输入=3x gtceu:cobaltite_dust 产出=钴粉×1、砷粉×1、硫粉×1 | 来源=全链产率 | 每1粉=钴粉 0.333333、砷粉 0.333333、硫粉 0.333333"
+  },
+  "shanhai:deconstruct/gtceu_diatomite_dust": {
+   "inItem": "75x gtceu:diatomite_dust",
+   "outItems": [
+    "20x gtceu:silicon_dust",
+    "3x gtceu:iron_dust",
+    "3x gtceu:aluminium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 49000"
+   ],
+   "cn": "硅藻土",
+   "src": "全链产率",
+   "ev": "硅藻土粉 输入=75x gtceu:diatomite_dust 产出=硅粉×20、铁粉×3、铝粉×3、氧 49000mB | 来源=全链产率 | 每1粉=氧 0.653333、硅粉 0.266667、铁粉 0.04、铝粉 0.04"
+  },
+  "shanhai:deconstruct/gtceu_electrotine_dust": {
+   "inItem": "480x gtceu:electrotine_dust",
+   "outItems": [
+    "30x gtceu:silver_dust",
+    "30x gtceu:gold_dust",
+    "20x gtceu:sulfur_dust",
+    "10x gtceu:iron_dust",
+    "6x gtceu:silicon_dust",
+    "2x gtceu:aluminium_dust",
+    "1x gtceu:chromium_dust"
+   ],
+   "outFluids": [
+    "gtceu:mercury 18000",
+    "gtceu:oxygen 3000"
+   ],
+   "cn": "蓝石",
+   "src": "全链产率",
+   "ev": "蓝石粉 输入=480x gtceu:electrotine_dust 产出=银粉×30、金粉×30、硫粉×20、铁粉×10、硅粉×6、铝粉×2、铬粉×1、汞 18000mB、氧 3000mB | 来源=全链产率 | 每1粉=银粉 0.0625、金粉 0.0625、硫粉 0.041667、汞 0.0375、铁粉 0.020833、硅粉 0.0125、氧 0.00625、铝粉 0.004167、铬粉 0.002083"
+  },
+  "shanhai:deconstruct/gtceu_electrum_dust": {
+   "inItem": "2x gtceu:electrum_dust",
+   "outItems": [
+    "1x gtceu:silver_dust",
+    "1x gtceu:gold_dust"
+   ],
+   "outFluids": [],
+   "cn": "琥珀金",
+   "src": "全链产率",
+   "ev": "琥珀金粉 输入=2x gtceu:electrum_dust 产出=银粉×1、金粉×1 | 来源=全链产率 | 每1粉=银粉 0.5、金粉 0.5"
+  },
+  "shanhai:deconstruct/gtceu_emerald_dust": {
+   "inItem": "29x gtceu:emerald_dust",
+   "outItems": [
+    "6x gtceu:silicon_dust",
+    "3x gtceu:beryllium_dust",
+    "2x gtceu:aluminium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 18000"
+   ],
+   "cn": "绿宝石",
+   "src": "全链产率",
+   "ev": "绿宝石粉 输入=29x gtceu:emerald_dust 产出=硅粉×6、铍粉×3、铝粉×2、氧 18000mB | 来源=全链产率 | 每1粉=氧 0.62069、硅粉 0.206897、铍粉 0.103448、铝粉 0.068966"
+  },
+  "shanhai:deconstruct/gtceu_ender_pearl_dust": {
+   "inItem": "10x gtceu:ender_pearl_dust",
+   "outItems": [
+    "4x gtceu:potassium_dust",
+    "1x gtceu:beryllium_dust"
+   ],
+   "outFluids": [
+    "gtceu:nitrogen 5000"
+   ],
+   "cn": "末影珍珠",
+   "src": "全链产率",
+   "ev": "末影珍珠粉 输入=10x gtceu:ender_pearl_dust 产出=钾粉×4、铍粉×1、氮 5000mB | 来源=全链产率 | 每1粉=氮 0.5、钾粉 0.4、铍粉 0.1"
+  },
+  "shanhai:deconstruct/gtceu_fullers_earth_dust": {
+   "inItem": "21x gtceu:fullers_earth_dust",
+   "outItems": [
+    "4x gtceu:silicon_dust",
+    "1x gtceu:magnesium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 11004",
+    "gtceu:hydrogen 1008"
+   ],
+   "cn": "漂白土",
+   "src": "全链产率",
+   "ev": "漂白土粉 输入=21x gtceu:fullers_earth_dust 产出=硅粉×4、镁粉×1、氧 11004mB、氢 1008mB | 来源=全链产率 | 每1粉=氧 0.524、硅粉 0.190476、氢 0.048、镁粉 0.047619"
+  },
+  "shanhai:deconstruct/gtceu_galena_dust": {
+   "inItem": "2x gtceu:galena_dust",
+   "outItems": [
+    "1x gtceu:lead_dust",
+    "1x gtceu:sulfur_dust"
+   ],
+   "outFluids": [],
+   "cn": "方铅矿",
+   "src": "全链产率",
+   "ev": "方铅矿粉 输入=2x gtceu:galena_dust 产出=铅粉×1、硫粉×1 | 来源=全链产率 | 每1粉=铅粉 0.5、硫粉 0.5"
+  },
+  "shanhai:deconstruct/gtceu_garnet_sand_dust": {
+   "inItem": "120x gtceu:garnet_sand_dust",
+   "outItems": [
+    "18x gtceu:silicon_dust",
+    "9x gtceu:calcium_dust",
+    "8x gtceu:aluminium_dust",
+    "5x gtceu:iron_dust",
+    "3x gtceu:magnesium_dust",
+    "3x gtceu:manganese_dust",
+    "2x gtceu:chromium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 72000"
+   ],
+   "cn": "石榴石砂",
+   "src": "全链产率",
+   "ev": "石榴石砂粉 输入=120x gtceu:garnet_sand_dust 产出=硅粉×18、钙粉×9、铝粉×8、铁粉×5、镁粉×3、锰粉×3、铬粉×2、氧 72000mB | 来源=全链产率 | 每1粉=氧 0.6、硅粉 0.15、钙粉 0.075、铝粉 0.066667、铁粉 0.041667、镁粉 0.025、锰粉 0.025、铬粉 0.016667"
+  },
+  "shanhai:deconstruct/gtceu_garnierite_dust": {
+   "inItem": "2x gtceu:garnierite_dust",
+   "outItems": [
+    "1x gtceu:nickel_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 1000"
+   ],
+   "cn": "硅镁镍矿",
+   "src": "全链产率",
+   "ev": "硅镁镍矿粉 输入=2x gtceu:garnierite_dust 产出=镍粉×1、氧 1000mB | 来源=全链产率 | 每1粉=镍粉 0.5、氧 0.5"
+  },
+  "shanhai:deconstruct/gtceu_glauconite_sand_dust": {
+   "inItem": "21x gtceu:glauconite_sand_dust",
+   "outItems": [
+    "4x gtceu:aluminium_dust",
+    "2x gtceu:magnesium_dust",
+    "1x gtceu:potassium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 12000",
+    "gtceu:hydrogen 2000"
+   ],
+   "cn": "海绿石砂",
+   "src": "全链产率",
+   "ev": "海绿石砂粉 输入=21x gtceu:glauconite_sand_dust 产出=铝粉×4、镁粉×2、钾粉×1、氧 12000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.571429、铝粉 0.190476、镁粉 0.095238、氢 0.095238、钾粉 0.047619"
+  },
+  "shanhai:deconstruct/gtceu_goethite_dust": {
+   "inItem": "4x gtceu:goethite_dust",
+   "outItems": [
+    "1x gtceu:iron_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 2000",
+    "gtceu:hydrogen 1000"
+   ],
+   "cn": "针铁矿",
+   "src": "全链产率",
+   "ev": "针铁矿粉 输入=4x gtceu:goethite_dust 产出=铁粉×1、氧 2000mB、氢 1000mB | 来源=全链产率 | 每1粉=氧 0.5、铁粉 0.25、氢 0.25"
+  },
+  "shanhai:deconstruct/gtceu_graphite_dust": {
+   "inItem": "1x gtceu:graphite_dust",
+   "outItems": [
+    "4x gtceu:carbon_dust"
+   ],
+   "outFluids": [],
+   "cn": "石墨",
+   "src": "全链产率",
+   "ev": "石墨粉 输入=1x gtceu:graphite_dust 产出=碳粉×4 | 来源=全链产率 | 每1粉=碳粉 4"
+  },
+  "shanhai:deconstruct/gtceu_green_sapphire_dust": {
+   "inItem": "5x gtceu:green_sapphire_dust",
+   "outItems": [
+    "2x gtceu:aluminium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 3000"
+   ],
+   "cn": "绿色蓝宝石",
+   "src": "全链产率",
+   "ev": "绿色蓝宝石粉 输入=5x gtceu:green_sapphire_dust 产出=铝粉×2、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、铝粉 0.4"
+  },
+  "shanhai:deconstruct/gtceu_grossular_dust": {
+   "inItem": "20x gtceu:grossular_dust",
+   "outItems": [
+    "3x gtceu:calcium_dust",
+    "3x gtceu:silicon_dust",
+    "2x gtceu:aluminium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 12000"
+   ],
+   "cn": "钙铝榴石",
+   "src": "全链产率",
+   "ev": "钙铝榴石粉 输入=20x gtceu:grossular_dust 产出=钙粉×3、硅粉×3、铝粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、钙粉 0.15、硅粉 0.15、铝粉 0.1"
+  },
+  "shanhai:deconstruct/gtceu_gypsum_dust": {
+   "inItem": "4000x gtceu:gypsum_dust",
+   "outItems": [
+    "500x gtceu:calcium_dust",
+    "500x gtceu:sulfur_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 2001000",
+    "gtceu:hydrogen 2000"
+   ],
+   "cn": "石膏",
+   "src": "全链产率",
+   "ev": "石膏粉 输入=4000x gtceu:gypsum_dust 产出=钙粉×500、硫粉×500、氧 2001000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.50025、钙粉 0.125、硫粉 0.125、氢 0.0005"
+  },
+  "shanhai:deconstruct/gtceu_hematite_dust": {
+   "inItem": "5x gtceu:hematite_dust",
+   "outItems": [
+    "2x gtceu:iron_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 3000"
+   ],
+   "cn": "赤铁矿",
+   "src": "全链产率",
+   "ev": "赤铁矿粉 输入=5x gtceu:hematite_dust 产出=铁粉×2、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、铁粉 0.4"
+  },
+  "shanhai:deconstruct/gtceu_ilmenite_dust": {
+   "inItem": "5x gtceu:ilmenite_dust",
+   "outItems": [
+    "2x gtceu:titanium_dust",
+    "1x gtceu:iron_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 6000"
+   ],
+   "cn": "钛铁矿",
+   "src": "全链产率",
+   "ev": "钛铁矿粉 输入=5x gtceu:ilmenite_dust 产出=钛粉×2、铁粉×1、氧 6000mB | 来源=全链产率 | 每1粉=氧 1.2、钛粉 0.4、铁粉 0.2"
+  },
+  "shanhai:deconstruct/gtceu_kyanite_dust": {
+   "inItem": "8x gtceu:kyanite_dust",
+   "outItems": [
+    "2x gtceu:aluminium_dust",
+    "1x gtceu:silicon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 5000"
+   ],
+   "cn": "蓝晶石",
+   "src": "全链产率",
+   "ev": "蓝晶石粉 输入=8x gtceu:kyanite_dust 产出=铝粉×2、硅粉×1、氧 5000mB | 来源=全链产率 | 每1粉=氧 0.625、铝粉 0.25、硅粉 0.125"
+  },
+  "shanhai:deconstruct/gtceu_lazurite_dust": {
+   "inItem": "14x gtceu:lazurite_dust",
+   "outItems": [
+    "4x gtceu:calcium_dust",
+    "4x gtceu:sodium_dust",
+    "3x gtceu:aluminium_dust",
+    "3x gtceu:silicon_dust"
+   ],
+   "outFluids": [],
+   "cn": "蓝金石",
+   "src": "全链产率",
+   "ev": "蓝金石粉 输入=14x gtceu:lazurite_dust 产出=钙粉×4、钠粉×4、铝粉×3、硅粉×3 | 来源=全链产率 | 每1粉=钙粉 0.285714、钠粉 0.285714、铝粉 0.214286、硅粉 0.214286"
+  },
+  "shanhai:deconstruct/gtceu_lepidolite_dust": {
+   "inItem": "20x gtceu:lepidolite_dust",
+   "outItems": [
+    "4x gtceu:aluminium_dust",
+    "3x gtceu:lithium_dust",
+    "1x gtceu:potassium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 10000",
+    "gtceu:fluorine 2000"
+   ],
+   "cn": "锂云母",
+   "src": "全链产率",
+   "ev": "锂云母粉 输入=20x gtceu:lepidolite_dust 产出=铝粉×4、锂粉×3、钾粉×1、氧 10000mB、氟 2000mB | 来源=全链产率 | 每1粉=氧 0.5、铝粉 0.2、锂粉 0.15、氟 0.1、钾粉 0.05"
+  },
+  "shanhai:deconstruct/gtceu_magnesite_dust": {
+   "inItem": "5x gtceu:magnesite_dust",
+   "outItems": [
+    "1x gtceu:magnesium_dust",
+    "1x gtceu:carbon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 3000"
+   ],
+   "cn": "菱镁矿",
+   "src": "全链产率",
+   "ev": "菱镁矿粉 输入=5x gtceu:magnesite_dust 产出=镁粉×1、碳粉×1、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、镁粉 0.2、碳粉 0.2"
+  },
+  "shanhai:deconstruct/gtceu_magnetite_dust": {
+   "inItem": "7x gtceu:magnetite_dust",
+   "outItems": [
+    "3x gtceu:iron_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 4000"
+   ],
+   "cn": "磁铁矿",
+   "src": "全链产率",
+   "ev": "磁铁矿粉 输入=7x gtceu:magnetite_dust 产出=铁粉×3、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.571429、铁粉 0.428571"
+  },
+  "shanhai:deconstruct/gtceu_malachite_dust": {
+   "inItem": "10x gtceu:malachite_dust",
+   "outItems": [
+    "2x gtceu:copper_dust",
+    "1x gtceu:carbon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 5000",
+    "gtceu:hydrogen 2000"
+   ],
+   "cn": "孔雀石",
+   "src": "全链产率",
+   "ev": "孔雀石粉 输入=10x gtceu:malachite_dust 产出=铜粉×2、碳粉×1、氧 5000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.5、铜粉 0.2、氢 0.2、碳粉 0.1"
+  },
+  "shanhai:deconstruct/gtceu_massicot_dust": {
+   "inItem": "2x gtceu:massicot_dust",
+   "outItems": [
+    "1x gtceu:lead_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 1000"
+   ],
+   "cn": "铅黄",
+   "src": "全链产率",
+   "ev": "铅黄粉 输入=2x gtceu:massicot_dust 产出=铅粉×1、氧 1000mB | 来源=全链产率 | 每1粉=铅粉 0.5、氧 0.5"
+  },
+  "shanhai:deconstruct/gtceu_mica_dust": {
+   "inItem": "19x gtceu:mica_dust",
+   "outItems": [
+    "3x gtceu:aluminium_dust",
+    "3x gtceu:silicon_dust",
+    "1x gtceu:potassium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 10000",
+    "gtceu:fluorine 2000"
+   ],
+   "cn": "云母",
+   "src": "全链产率",
+   "ev": "云母粉 输入=19x gtceu:mica_dust 产出=铝粉×3、硅粉×3、钾粉×1、氧 10000mB、氟 2000mB | 来源=全链产率 | 每1粉=氧 0.526316、铝粉 0.157895、硅粉 0.157895、氟 0.105263、钾粉 0.052632"
+  },
+  "shanhai:deconstruct/gtceu_molybdenite_dust": {
+   "inItem": "3x gtceu:molybdenite_dust",
+   "outItems": [
+    "3x gtceu:rhenium_dust",
+    "1x gtceu:gold_dust",
+    "1x gtceu:molybdenum_dust"
+   ],
+   "outFluids": [],
+   "cn": "辉钼矿",
+   "src": "扭曲仪配比",
+   "ev": "辉钼矿粉 输入=3x gtceu:molybdenite_dust 产出=铼粉×3、金粉×1、钼粉×1 | 来源=扭曲仪配比 | 每1粉=铼粉 1、金粉 0.333333、钼粉 0.333333"
+  },
+  "shanhai:deconstruct/gtceu_olivine_dust": {
+   "inItem": "15x gtceu:olivine_dust",
+   "outItems": [
+    "6x gtceu:magnesium_dust",
+    "3x gtceu:iron_dust",
+    "2x gtceu:silicon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 4000"
+   ],
+   "cn": "橄榄石",
+   "src": "全链产率",
+   "ev": "橄榄石粉 输入=15x gtceu:olivine_dust 产出=镁粉×6、铁粉×3、硅粉×2、氧 4000mB | 来源=全链产率 | 每1粉=镁粉 0.4、氧 0.266667、铁粉 0.2、硅粉 0.133333"
+  },
+  "shanhai:deconstruct/gtceu_opal_dust": {
+   "inItem": "3x gtceu:opal_dust",
+   "outItems": [
+    "1x gtceu:silicon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 2000"
+   ],
+   "cn": "猫眼石",
+   "src": "全链产率",
+   "ev": "猫眼石粉 输入=3x gtceu:opal_dust 产出=硅粉×1、氧 2000mB | 来源=全链产率 | 每1粉=氧 0.666667、硅粉 0.333333"
+  },
+  "shanhai:deconstruct/gtceu_pentlandite_dust": {
+   "inItem": "17x gtceu:pentlandite_dust",
+   "outItems": [
+    "9x gtceu:nickel_dust",
+    "8x gtceu:sulfur_dust"
+   ],
+   "outFluids": [],
+   "cn": "镍黄铁矿",
+   "src": "全链产率",
+   "ev": "镍黄铁矿粉 输入=17x gtceu:pentlandite_dust 产出=镍粉×9、硫粉×8 | 来源=全链产率 | 每1粉=镍粉 0.529412、硫粉 0.470588"
+  },
+  "shanhai:deconstruct/gtceu_phosphate_dust": {
+   "inItem": "5x gtceu:phosphate_dust",
+   "outItems": [
+    "1x gtceu:phosphorus_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 4000"
+   ],
+   "cn": "磷酸盐",
+   "src": "全链产率",
+   "ev": "磷酸盐粉 输入=5x gtceu:phosphate_dust 产出=磷粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.8、磷粉 0.2"
+  },
+  "shanhai:deconstruct/gtceu_pollucite_dust": {
+   "inItem": "11000x gtceu:pollucite_dust",
+   "outItems": [
+    "2000x gtceu:silicon_dust",
+    "1000x gtceu:caesium_dust",
+    "1000x gtceu:aluminium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 6001000",
+    "gtceu:hydrogen 2000"
+   ],
+   "cn": "铯榴石",
+   "src": "全链产率",
+   "ev": "铯榴石粉 输入=11000x gtceu:pollucite_dust 产出=硅粉×2000、铯粉×1000、铝粉×1000、氧 6001000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.545545、硅粉 0.181818、铯粉 0.090909、铝粉 0.090909、氢 0.000182"
+  },
+  "shanhai:deconstruct/gtceu_powellite_dust": {
+   "inItem": "6x gtceu:powellite_dust",
+   "outItems": [
+    "1x gtceu:calcium_dust",
+    "1x gtceu:molybdenum_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 4000"
+   ],
+   "cn": "钼钙矿",
+   "src": "全链产率",
+   "ev": "钼钙矿粉 输入=6x gtceu:powellite_dust 产出=钙粉×1、钼粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.666667、钙粉 0.166667、钼粉 0.166667"
+  },
+  "shanhai:deconstruct/gtceu_pyrite_dust": {
+   "inItem": "3x gtceu:pyrite_dust",
+   "outItems": [
+    "2x gtceu:sulfur_dust",
+    "1x gtceu:iron_dust"
+   ],
+   "outFluids": [],
+   "cn": "黄铁矿",
+   "src": "全链产率",
+   "ev": "黄铁矿粉 输入=3x gtceu:pyrite_dust 产出=硫粉×2、铁粉×1 | 来源=全链产率 | 每1粉=硫粉 0.666667、铁粉 0.333333"
+  },
+  "shanhai:deconstruct/gtceu_pyrochlore_dust": {
+   "inItem": "11x gtceu:pyrochlore_dust",
+   "outItems": [
+    "2x gtceu:calcium_dust",
+    "2x gtceu:niobium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 7000"
+   ],
+   "cn": "烧绿石",
+   "src": "全链产率",
+   "ev": "烧绿石粉 输入=11x gtceu:pyrochlore_dust 产出=钙粉×2、铌粉×2、氧 7000mB | 来源=全链产率 | 每1粉=氧 0.636364、钙粉 0.181818、铌粉 0.181818"
+  },
+  "shanhai:deconstruct/gtceu_pyrolusite_dust": {
+   "inItem": "3x gtceu:pyrolusite_dust",
+   "outItems": [
+    "1x gtceu:manganese_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 2000"
+   ],
+   "cn": "软锰矿",
+   "src": "全链产率",
+   "ev": "软锰矿粉 输入=3x gtceu:pyrolusite_dust 产出=锰粉×1、氧 2000mB | 来源=全链产率 | 每1粉=氧 0.666667、锰粉 0.333333"
+  },
+  "shanhai:deconstruct/gtceu_pyrope_dust": {
+   "inItem": "20x gtceu:pyrope_dust",
+   "outItems": [
+    "3x gtceu:magnesium_dust",
+    "3x gtceu:silicon_dust",
+    "2x gtceu:aluminium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 12000"
+   ],
+   "cn": "镁铝榴石",
+   "src": "全链产率",
+   "ev": "镁铝榴石粉 输入=20x gtceu:pyrope_dust 产出=镁粉×3、硅粉×3、铝粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、镁粉 0.15、硅粉 0.15、铝粉 0.1"
+  },
+  "shanhai:deconstruct/gtceu_realgar_dust": {
+   "inItem": "2x gtceu:realgar_dust",
+   "outItems": [
+    "1x gtceu:arsenic_dust",
+    "1x gtceu:sulfur_dust"
+   ],
+   "outFluids": [],
+   "cn": "雄黄",
+   "src": "全链产率",
+   "ev": "雄黄粉 输入=2x gtceu:realgar_dust 产出=砷粉×1、硫粉×1 | 来源=全链产率 | 每1粉=砷粉 0.5、硫粉 0.5"
+  },
+  "shanhai:deconstruct/gtceu_red_garnet_dust": {
+   "inItem": "320x gtceu:red_garnet_dust",
+   "outItems": [
+    "48x gtceu:silicon_dust",
+    "32x gtceu:aluminium_dust",
+    "24x gtceu:manganese_dust",
+    "15x gtceu:iron_dust",
+    "9x gtceu:magnesium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 192000"
+   ],
+   "cn": "红石榴石",
+   "src": "全链产率",
+   "ev": "红石榴石粉 输入=320x gtceu:red_garnet_dust 产出=硅粉×48、铝粉×32、锰粉×24、铁粉×15、镁粉×9、氧 192000mB | 来源=全链产率 | 每1粉=氧 0.6、硅粉 0.15、铝粉 0.1、锰粉 0.075、铁粉 0.046875、镁粉 0.028125"
+  },
+  "shanhai:deconstruct/gtceu_rock_salt_dust": {
+   "inItem": "2x gtceu:rock_salt_dust",
+   "outItems": [
+    "1x gtceu:potassium_dust"
+   ],
+   "outFluids": [
+    "gtceu:chlorine 1000"
+   ],
+   "cn": "岩盐",
+   "src": "全链产率",
+   "ev": "岩盐粉 输入=2x gtceu:rock_salt_dust 产出=钾粉×1、氯 1000mB | 来源=全链产率 | 每1粉=钾粉 0.5、氯 0.5"
+  },
+  "shanhai:deconstruct/gtceu_ruby_dust": {
+   "inItem": "6x gtceu:ruby_dust",
+   "outItems": [
+    "2x gtceu:aluminium_dust",
+    "1x gtceu:chromium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 3000"
+   ],
+   "cn": "红宝石",
+   "src": "全链产率",
+   "ev": "红宝石粉 输入=6x gtceu:ruby_dust 产出=铝粉×2、铬粉×1、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.5、铝粉 0.333333、铬粉 0.166667"
+  },
+  "shanhai:deconstruct/gtceu_salt_dust": {
+   "inItem": "2x gtceu:salt_dust",
+   "outItems": [
+    "1x gtceu:sodium_dust"
+   ],
+   "outFluids": [
+    "gtceu:chlorine 1000"
+   ],
+   "cn": "盐",
+   "src": "全链产率",
+   "ev": "盐粉 输入=2x gtceu:salt_dust 产出=钠粉×1、氯 1000mB | 来源=全链产率 | 每1粉=钠粉 0.5、氯 0.5"
+  },
+  "shanhai:deconstruct/gtceu_saltpeter_dust": {
+   "inItem": "5x gtceu:saltpeter_dust",
+   "outItems": [
+    "1x gtceu:potassium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 3000",
+    "gtceu:nitrogen 1000"
+   ],
+   "cn": "硝石",
+   "src": "全链产率",
+   "ev": "硝石粉 输入=5x gtceu:saltpeter_dust 产出=钾粉×1、氧 3000mB、氮 1000mB | 来源=全链产率 | 每1粉=氧 0.6、钾粉 0.2、氮 0.2"
+  },
+  "shanhai:deconstruct/gtceu_sapphire_dust": {
+   "inItem": "5x gtceu:sapphire_dust",
+   "outItems": [
+    "2x gtceu:aluminium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 3000"
+   ],
+   "cn": "蓝宝石",
+   "src": "全链产率",
+   "ev": "蓝宝石粉 输入=5x gtceu:sapphire_dust 产出=铝粉×2、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.6、铝粉 0.4"
+  },
+  "shanhai:deconstruct/gtceu_silicon_dioxide_dust": {
+   "inItem": "3x gtceu:silicon_dioxide_dust",
+   "outItems": [
+    "1x gtceu:silicon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 2000"
+   ],
+   "cn": "二氧化硅",
+   "src": "全链产率",
+   "ev": "二氧化硅粉 输入=3x gtceu:silicon_dioxide_dust 产出=硅粉×1、氧 2000mB | 来源=全链产率 | 每1粉=氧 0.666667、硅粉 0.333333"
+  },
+  "shanhai:deconstruct/gtceu_soapstone_dust": {
+   "inItem": "21x gtceu:soapstone_dust",
+   "outItems": [
+    "4x gtceu:silicon_dust",
+    "3x gtceu:magnesium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 12000",
+    "gtceu:hydrogen 2000"
+   ],
+   "cn": "皂石",
+   "src": "全链产率",
+   "ev": "皂石粉 输入=21x gtceu:soapstone_dust 产出=硅粉×4、镁粉×3、氧 12000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.571429、硅粉 0.190476、镁粉 0.142857、氢 0.095238"
+  },
+  "shanhai:deconstruct/gtceu_soda_ash_dust": {
+   "inItem": "6x gtceu:soda_ash_dust",
+   "outItems": [
+    "2x gtceu:sodium_dust",
+    "1x gtceu:carbon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 3000"
+   ],
+   "cn": "纯碱",
+   "src": "全链产率",
+   "ev": "纯碱粉 输入=6x gtceu:soda_ash_dust 产出=钠粉×2、碳粉×1、氧 3000mB | 来源=全链产率 | 每1粉=氧 0.5、钠粉 0.333333、碳粉 0.166667"
+  },
+  "shanhai:deconstruct/gtceu_sodalite_dust": {
+   "inItem": "11x gtceu:sodalite_dust",
+   "outItems": [
+    "4x gtceu:sodium_dust",
+    "3x gtceu:aluminium_dust",
+    "3x gtceu:silicon_dust"
+   ],
+   "outFluids": [
+    "gtceu:chlorine 1000"
+   ],
+   "cn": "方钠石",
+   "src": "全链产率",
+   "ev": "方钠石粉 输入=11x gtceu:sodalite_dust 产出=钠粉×4、铝粉×3、硅粉×3、氯 1000mB | 来源=全链产率 | 每1粉=钠粉 0.363636、铝粉 0.272727、硅粉 0.272727、氯 0.090909"
+  },
+  "shanhai:deconstruct/gtceu_spessartine_dust": {
+   "inItem": "20x gtceu:spessartine_dust",
+   "outItems": [
+    "3x gtceu:manganese_dust",
+    "3x gtceu:silicon_dust",
+    "2x gtceu:aluminium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 12000"
+   ],
+   "cn": "锰铝榴石",
+   "src": "全链产率",
+   "ev": "锰铝榴石粉 输入=20x gtceu:spessartine_dust 产出=锰粉×3、硅粉×3、铝粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、锰粉 0.15、硅粉 0.15、铝粉 0.1"
+  },
+  "shanhai:deconstruct/gtceu_sphalerite_dust": {
+   "inItem": "40x gtceu:sphalerite_dust",
+   "outItems": [
+    "20x gtceu:zinc_dust",
+    "20x gtceu:sulfur_dust",
+    "1x gtceu:gallium_dust"
+   ],
+   "outFluids": [],
+   "cn": "闪锌矿",
+   "src": "全链产率",
+   "ev": "闪锌矿粉 输入=40x gtceu:sphalerite_dust 产出=锌粉×20、硫粉×20、镓粉×1 | 来源=全链产率 | 每1粉=锌粉 0.5、硫粉 0.5、镓粉 0.025"
+  },
+  "shanhai:deconstruct/gtceu_spodumene_dust": {
+   "inItem": "10x gtceu:spodumene_dust",
+   "outItems": [
+    "2x gtceu:silicon_dust",
+    "1x gtceu:lithium_dust",
+    "1x gtceu:aluminium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 6000"
+   ],
+   "cn": "锂辉石",
+   "src": "全链产率",
+   "ev": "锂辉石粉 输入=10x gtceu:spodumene_dust 产出=硅粉×2、锂粉×1、铝粉×1、氧 6000mB | 来源=全链产率 | 每1粉=氧 0.6、硅粉 0.2、锂粉 0.1、铝粉 0.1"
+  },
+  "shanhai:deconstruct/gtceu_stibnite_dust": {
+   "inItem": "5x gtceu:stibnite_dust",
+   "outItems": [
+    "3x gtceu:sulfur_dust",
+    "2x gtceu:antimony_dust"
+   ],
+   "outFluids": [],
+   "cn": "辉锑矿",
+   "src": "全链产率",
+   "ev": "辉锑矿粉 输入=5x gtceu:stibnite_dust 产出=硫粉×3、锑粉×2 | 来源=全链产率 | 每1粉=硫粉 0.6、锑粉 0.4"
+  },
+  "shanhai:deconstruct/gtceu_talc_dust": {
+   "inItem": "21x gtceu:talc_dust",
+   "outItems": [
+    "4x gtceu:silicon_dust",
+    "3x gtceu:magnesium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 12000",
+    "gtceu:hydrogen 2000"
+   ],
+   "cn": "滑石",
+   "src": "全链产率",
+   "ev": "滑石粉 输入=21x gtceu:talc_dust 产出=硅粉×4、镁粉×3、氧 12000mB、氢 2000mB | 来源=全链产率 | 每1粉=氧 0.571429、硅粉 0.190476、镁粉 0.142857、氢 0.095238"
+  },
+  "shanhai:deconstruct/gtceu_tantalite_dust": {
+   "inItem": "9x gtceu:tantalite_dust",
+   "outItems": [
+    "2x gtceu:tantalum_dust",
+    "1x gtceu:manganese_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 6000"
+   ],
+   "cn": "钽铁矿",
+   "src": "全链产率",
+   "ev": "钽铁矿粉 输入=9x gtceu:tantalite_dust 产出=钽粉×2、锰粉×1、氧 6000mB | 来源=全链产率 | 每1粉=氧 0.666667、钽粉 0.222222、锰粉 0.111111"
+  },
+  "shanhai:deconstruct/gtceu_tetrahedrite_dust": {
+   "inItem": "8x gtceu:tetrahedrite_dust",
+   "outItems": [
+    "3x gtceu:copper_dust",
+    "3x gtceu:sulfur_dust",
+    "1x gtceu:antimony_dust",
+    "1x gtceu:iron_dust"
+   ],
+   "outFluids": [],
+   "cn": "黝铜矿",
+   "src": "全链产率",
+   "ev": "黝铜矿粉 输入=8x gtceu:tetrahedrite_dust 产出=铜粉×3、硫粉×3、锑粉×1、铁粉×1 | 来源=全链产率 | 每1粉=铜粉 0.375、硫粉 0.375、锑粉 0.125、铁粉 0.125"
+  },
+  "shanhai:deconstruct/gtceu_topaz_dust": {
+   "inItem": "6x gtceu:topaz_dust",
+   "outItems": [
+    "2x gtceu:aluminium_dust",
+    "1x gtceu:silicon_dust"
+   ],
+   "outFluids": [
+    "gtceu:hydrogen 2000",
+    "gtceu:fluorine 1000"
+   ],
+   "cn": "黄玉",
+   "src": "全链产率",
+   "ev": "黄玉粉 输入=6x gtceu:topaz_dust 产出=铝粉×2、硅粉×1、氢 2000mB、氟 1000mB | 来源=全链产率 | 每1粉=铝粉 0.333333、氢 0.333333、硅粉 0.166667、氟 0.166667"
+  },
+  "shanhai:deconstruct/gtceu_tricalcium_phosphate_dust": {
+   "inItem": "25x gtceu:tricalcium_phosphate_dust",
+   "outItems": [
+    "15x gtceu:calcium_dust",
+    "2x gtceu:phosphorus_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 8000"
+   ],
+   "cn": "磷酸三钙",
+   "src": "全链产率",
+   "ev": "磷酸三钙粉 输入=25x gtceu:tricalcium_phosphate_dust 产出=钙粉×15、磷粉×2、氧 8000mB | 来源=全链产率 | 每1粉=钙粉 0.6、氧 0.32、磷粉 0.08"
+  },
+  "shanhai:deconstruct/gtceu_trinium_compound_dust": {
+   "inItem": "9x gtceu:trinium_compound_dust",
+   "outItems": [
+    "8x gtceu:selenium_dust",
+    "8x gtceu:astatine_dust",
+    "9x gtceu:trinium_dust",
+    "9x gtceu:actinium_dust"
+   ],
+   "outFluids": [],
+   "cn": "凯金化合物",
+   "src": "扭曲仪配比",
+   "ev": "凯金化合物粉 输入=9x gtceu:trinium_compound_dust 产出=硒粉×8、砹粉×8、凯金粉×9、锕粉×9 | 来源=扭曲仪配比 | 每1粉=凯金粉 1、锕粉 1、硒粉 0.888889、砹粉 0.888889"
+  },
+  "shanhai:deconstruct/gtceu_trona_dust": {
+   "inItem": "16x gtceu:trona_dust",
+   "outItems": [
+    "3x gtceu:sodium_dust",
+    "2x gtceu:carbon_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 6002",
+    "gtceu:hydrogen 1004"
+   ],
+   "cn": "天然碱",
+   "src": "全链产率",
+   "ev": "天然碱粉 输入=16x gtceu:trona_dust 产出=钠粉×3、碳粉×2、氧 6002mB、氢 1004mB | 来源=全链产率 | 每1粉=氧 0.375125、钠粉 0.1875、碳粉 0.125、氢 0.06275"
+  },
+  "shanhai:deconstruct/gtceu_uvarovite_dust": {
+   "inItem": "20x gtceu:uvarovite_dust",
+   "outItems": [
+    "3x gtceu:calcium_dust",
+    "3x gtceu:silicon_dust",
+    "2x gtceu:chromium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 12000"
+   ],
+   "cn": "钙铬榴石",
+   "src": "全链产率",
+   "ev": "钙铬榴石粉 输入=20x gtceu:uvarovite_dust 产出=钙粉×3、硅粉×3、铬粉×2、氧 12000mB | 来源=全链产率 | 每1粉=氧 0.6、钙粉 0.15、硅粉 0.15、铬粉 0.1"
+  },
+  "shanhai:deconstruct/gtceu_vanadium_magnetite_dust": {
+   "inItem": "14x gtceu:vanadium_magnetite_dust",
+   "outItems": [
+    "7x gtceu:vanadium_dust",
+    "3x gtceu:iron_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 4000"
+   ],
+   "cn": "钒磁铁矿",
+   "src": "全链产率",
+   "ev": "钒磁铁矿粉 输入=14x gtceu:vanadium_magnetite_dust 产出=钒粉×7、铁粉×3、氧 4000mB | 来源=全链产率 | 每1粉=钒粉 0.5、氧 0.285714、铁粉 0.214286"
+  },
+  "shanhai:deconstruct/gtceu_wulfenite_dust": {
+   "inItem": "6x gtceu:wulfenite_dust",
+   "outItems": [
+    "1x gtceu:lead_dust",
+    "1x gtceu:molybdenum_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 4000"
+   ],
+   "cn": "钼铅矿",
+   "src": "全链产率",
+   "ev": "钼铅矿粉 输入=6x gtceu:wulfenite_dust 产出=铅粉×1、钼粉×1、氧 4000mB | 来源=全链产率 | 每1粉=氧 0.666667、铅粉 0.166667、钼粉 0.166667"
+  },
+  "shanhai:deconstruct/gtceu_yellow_garnet_dust": {
+   "inItem": "160x gtceu:yellow_garnet_dust",
+   "outItems": [
+    "24x gtceu:calcium_dust",
+    "24x gtceu:silicon_dust",
+    "8x gtceu:aluminium_dust",
+    "5x gtceu:iron_dust",
+    "3x gtceu:chromium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 96000"
+   ],
+   "cn": "黄石榴石",
+   "src": "全链产率",
+   "ev": "黄石榴石粉 输入=160x gtceu:yellow_garnet_dust 产出=钙粉×24、硅粉×24、铝粉×8、铁粉×5、铬粉×3、氧 96000mB | 来源=全链产率 | 每1粉=氧 0.6、钙粉 0.15、硅粉 0.15、铝粉 0.05、铁粉 0.03125、铬粉 0.01875"
+  },
+  "shanhai:deconstruct/gtceu_yellow_limonite_dust": {
+   "inItem": "4x gtceu:yellow_limonite_dust",
+   "outItems": [
+    "1x gtceu:iron_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 2000",
+    "gtceu:hydrogen 1000"
+   ],
+   "cn": "黄褐铁矿",
+   "src": "全链产率",
+   "ev": "黄褐铁矿粉 输入=4x gtceu:yellow_limonite_dust 产出=铁粉×1、氧 2000mB、氢 1000mB | 来源=全链产率 | 每1粉=氧 0.5、铁粉 0.25、氢 0.25"
+  },
+  "shanhai:deconstruct/gtceu_zincite_dust": {
+   "inItem": "2x gtceu:zincite_dust",
+   "outItems": [
+    "1x gtceu:zinc_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 1000"
+   ],
+   "cn": "红锌矿",
+   "src": "全链产率",
+   "ev": "红锌矿粉 输入=2x gtceu:zincite_dust 产出=锌粉×1、氧 1000mB | 来源=全链产率 | 每1粉=锌粉 0.5、氧 0.5"
+  },
+  "shanhai:deconstruct/gtceu_zircon_dust": {
+   "inItem": "30x gtceu:zircon_dust",
+   "outItems": [
+    "5x gtceu:zirconium_dust",
+    "5x gtceu:silicon_dust",
+    "3x gtceu:hafnium_dust"
+   ],
+   "outFluids": [
+    "gtceu:oxygen 20000"
+   ],
+   "cn": "锆石",
+   "src": "全链产率",
+   "ev": "锆石粉 输入=30x gtceu:zircon_dust 产出=锆粉×5、硅粉×5、铪粉×3、氧 20000mB | 来源=全链产率 | 每1粉=氧 0.666667、锆粉 0.166667、硅粉 0.166667、铪粉 0.1"
+  }
+ },
+ "added": [
+  {
+   "id": "shanhai:pmd_ore/gtceu_adamantine_compounds_dust",
+   "inItem": "4x gtceu:adamantine_compounds_dust",
+   "N": 4,
+   "cnName": "精金化合物",
+   "dustId": "gtceu:adamantine_compounds_dust",
+   "srcOres": [
+    "adamantine_compounds"
+   ],
+   "isMain": true,
+   "route": "gtceu/lightning_processor/adamantine_compounds_dust_a.json",
+   "chainLen": 1,
+   "outItems": [
+    "1x gtceu:adamantine_dust"
+   ],
+   "outFluids": [],
+   "outsChn": "精金粉×1",
+   "fluidsChn": "",
+   "perCn": "精金粉 0.25",
+   "sum": 0.25,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/gtceu_endstone_dust",
+   "inItem": "2000x gtceu:endstone_dust",
+   "N": 2000,
+   "cnName": "末地石",
+   "dustId": "gtceu:endstone_dust",
+   "srcOres": [
+    "enderium"
+   ],
+   "isMain": false,
+   "route": "gtceu/centrifuge/endstone_separation.json",
+   "chainLen": 4,
+   "outItems": [
+    "18x gtceu:lithium_dust",
+    "14x gtceu:platinum_dust",
+    "9x gtceu:tungsten_dust"
+   ],
+   "outFluids": [
+    "gtceu:helium 240000"
+   ],
+   "outsChn": "锂粉×18、铂粉×14、钨粉×9",
+   "fluidsChn": "氦 240000mB",
+   "perCn": "氦 0.12、锂粉 0.009、铂粉 0.007、钨粉 0.0045",
+   "sum": 0.1405,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/gtceu_jasper_dust",
+   "inItem": "16x gtceu:jasper_dust",
+   "N": 16,
+   "cnName": "碧玉",
+   "dustId": "gtceu:jasper_dust",
+   "srcOres": [
+    "jasper"
+   ],
+   "isMain": true,
+   "route": "thetornproductionline/extractor/easier_purified_tengam_dust.json",
+   "chainLen": 1,
+   "outItems": [
+    "1x gtceu:purified_tengam_dust"
+   ],
+   "outFluids": [],
+   "outsChn": "纯镃粉×1",
+   "fluidsChn": "",
+   "perCn": "纯镃粉 0.0625",
+   "sum": 0.0625,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/gtceu_monazite_dust",
+   "inItem": "16x gtceu:monazite_dust",
+   "N": 16,
+   "cnName": "独居石",
+   "dustId": "gtceu:monazite_dust",
+   "srcOres": [
+    "bastnasite",
+    "monazite",
+    "rare_earth_metal"
+   ],
+   "isMain": true,
+   "route": "cxhmz/electrolyzer/monazite.json",
+   "chainLen": 1,
+   "outItems": [
+    "1x gtceu:europium_dust",
+    "1x gtceu:samarium_dust",
+    "1x gtceu:dysprosium_dust",
+    "1x gtceu:erbium_dust",
+    "1x gtceu:holmium_dust",
+    "1x gtceu:gadolinium_dust",
+    "1x gtceu:lanthanum_dust",
+    "1x gtceu:yttrium_dust",
+    "1x gtceu:thulium_dust",
+    "1x gtceu:promethium_dust",
+    "1x gtceu:praseodymium_dust",
+    "1x gtceu:ytterbium_dust",
+    "1x gtceu:terbium_dust",
+    "1x gtceu:scandium_dust",
+    "1x gtceu:neodymium_dust",
+    "1x gtceu:lutetium_dust"
+   ],
+   "outFluids": [],
+   "outsChn": "铕粉×1、钐粉×1、镝粉×1、铒粉×1、钬粉×1、钆粉×1、镧粉×1、钇粉×1、铥粉×1、钷粉×1、镨粉×1、镱粉×1、铽粉×1、钪粉×1、钕粉×1、镥粉×1",
+   "fluidsChn": "",
+   "perCn": "铕粉 0.0625、钐粉 0.0625、镝粉 0.0625、铒粉 0.0625、钬粉 0.0625、钆粉 0.0625、镧粉 0.0625、钇粉 0.0625、铥粉 0.0625、钷粉 0.0625、镨粉 0.0625、镱粉 0.0625、铽粉 0.0625、钪粉 0.0625、钕粉 0.0625、镥粉 0.0625",
+   "sum": 1,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/gtceu_raw_tengam_dust",
+   "inItem": "1x gtceu:raw_tengam_dust",
+   "N": 1,
+   "cnName": "生镃",
+   "dustId": "gtceu:raw_tengam_dust",
+   "srcOres": [
+    "jasper"
+   ],
+   "isMain": false,
+   "route": "cxbp/large_chemical_reactor/purified_tengam_dust_fast.json",
+   "chainLen": 1,
+   "outItems": [
+    "1x gtceu:purified_tengam_dust"
+   ],
+   "outFluids": [],
+   "outsChn": "纯镃粉×1",
+   "fluidsChn": "",
+   "perCn": "纯镃粉 1",
+   "sum": 1,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/minecraft_glowstone_dust",
+   "inItem": "120x minecraft:glowstone_dust",
+   "N": 120,
+   "cnName": "荧石",
+   "dustId": "minecraft:glowstone_dust",
+   "srcOres": [
+    "cinnabar",
+    "redstone"
+   ],
+   "isMain": false,
+   "route": "gtceu/centrifuge/glowstone_separation.json",
+   "chainLen": 4,
+   "outItems": [
+    "60x gtceu:gold_dust",
+    "20x gtceu:sulfur_dust",
+    "10x gtceu:iron_dust",
+    "6x gtceu:silicon_dust",
+    "2x gtceu:aluminium_dust",
+    "1x gtceu:chromium_dust"
+   ],
+   "outFluids": [
+    "gtceu:mercury 18000",
+    "gtceu:oxygen 3000"
+   ],
+   "outsChn": "金粉×60、硫粉×20、铁粉×10、硅粉×6、铝粉×2、铬粉×1",
+   "fluidsChn": "汞 18000mB、氧 3000mB",
+   "perCn": "金粉 0.5、硫粉 0.166667、汞 0.15、铁粉 0.083333、硅粉 0.05、氧 0.025、铝粉 0.016667、铬粉 0.008333",
+   "sum": 1,
+   "src": "全链产率"
+  },
+  {
+   "id": "shanhai:pmd_ore/trinium_compound_ore",
+   "inItem": "9x #forge:ores/trinium_compound",
+   "N": 9,
+   "cnName": "凯金化合物",
+   "cnFull": "凯金化合物矿石",
+   "dustId": "gtceu:trinium_compound_ore",
+   "srcOres": [
+    "trinium_compound"
+   ],
+   "isMain": true,
+   "route": "gtceu/integrated_ore_processor_1_trinium_compound.json",
+   "chainLen": 2,
+   "outItems": [
+    "64x gtceu:selenium_dust",
+    "64x gtceu:astatine_dust",
+    "72x gtceu:trinium_dust",
+    "72x gtceu:actinium_dust"
+   ],
+   "outFluids": [],
+   "outsChn": "硒粉×64、砹粉×64、凯金粉×72、锕粉×72",
+   "fluidsChn": "",
+   "perCn": "硒粉 7.111111、砹粉 7.111111、凯金粉 8、锕粉 8",
+   "sum": 30.222222,
+   "src": "矿石 × 矿处主产物8粉 × 扭曲仪粉模板",
+   "fallback": {
+    "id": "shanhai:pmd_ore/gtceu_trinium_compound_ore",
+    "inItem": "9x gtceu:trinium_compound_ore",
+    "note": "裸 id 兜底（只覆盖石头变种）"
+   }
+  }
+ ]
+}

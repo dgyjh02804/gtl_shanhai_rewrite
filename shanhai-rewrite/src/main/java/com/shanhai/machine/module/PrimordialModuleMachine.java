@@ -36,8 +36,19 @@ import com.lowdragmc.lowdraglib.syncdata.annotation.Persisted;
 import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import com.shanhai.ShanhaiMod;
 import com.shanhai.common.compat.GtlAddCompat;
+import com.shanhai.common.heat.ShanhaiHeatGate;
+import com.shanhai.common.heat.ShanhaiHeatSources;
+import com.shanhai.common.log.ShanhaiLogThrottle;
+import com.shanhai.common.machine.ParallelOverrideConfigurator;
+import com.shanhai.common.machine.ParallelOverrideMachine;
 import com.shanhai.common.machine.PrimordialOmegaEngineMachine;
 import com.shanhai.common.recipe.PrimordialRecipeEffects;
+import com.shanhai.common.thread.ShanhaiBatchPlan;
+import com.shanhai.common.thread.ShanhaiConcurrencyTables;
+import com.shanhai.common.thread.ShanhaiDurationFloor;
+import com.shanhai.common.thread.ShanhaiFairAllocation;
+import com.shanhai.common.thread.ShanhaiParallelBudget;
+import com.shanhai.common.text.ShanhaiTextParser;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -110,7 +121,8 @@ import java.util.UUID;
  */
 public abstract class PrimordialModuleMachine extends WorkableElectricMultiblockMachine
         implements IModularMachineModule<PrimordialOmegaEngineMachine, PrimordialModuleMachine>, IMachineLife,
-                   IWirelessElectricMultiblockMachine, IThreadModifierMachine, ParallelMachine {
+                   IWirelessElectricMultiblockMachine, IThreadModifierMachine, ParallelMachine,
+                   ParallelOverrideMachine {
 
     // ───────────────────────── 几何常量（与 AntichristPosHelper 同源，仅用于兜底候选） ─────────────────────────
     /** 层 0 的基准距离（A 级：AntichristPosHelper 编译期常量）。 */
@@ -128,20 +140,32 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
     // ───────────────────────── 跨配方线程（2026-09-25 任务 A） ─────────────────────────
 
     /**
-     * <b>跨配方线程数（当前恒为 1，且【只是显示值】，不是功能）。</b>
+     * <b>跨配方并行（线程）的【基础值】= 1</b>（空槽 / 线程槽里不是世线残片时的最终值）。
      *
      * <h2>用户 2026-09-25 原话（逐字）</h2>
      * <blockquote>「现在模块是没有跨配方线程，后续我会加，你现在可以写跨配方线程数为 1」</blockquote>
-     * <p>⇒ 查证结论与用户口径一致：本工程 24 台模块<b>目前没有</b>任何"跨配方线程 / multi-recipe-parallel"
+     * <p>⇒ 查证结论与用户口径一致：本工程 24 台模块<b>当时</b>没有任何"跨配方线程 / multi-recipe-parallel"
      * 的字段或逻辑（取证见 {@link #getCrossRecipeThreads()} 的注释）；用户要求<b>先把显示做出来</b>，
      * 值写 1，等他以后加功能。
      *
      * <h2>🔴 为什么做成一个常量 + 一个 getter，而不是在 24 处各写一遍</h2>
      * 将来他真的加功能时，<b>只改这一处</b>（把常量换成真实计算）。
      * 24 台模块全部继承本类 ⇒ 改一处，显示与将来的取值一起跟上。
+     * <b>这条纪律已经兑现</b>：2026-09-28 加世线残片时，改动确实只落在
+     * {@link #getCrossRecipeThreads()} 一个方法里（见那里的留档）。
      *
-     * <p>⚠️ <b>不要把它接到配方逻辑上</b>：本轮明确"别把它做成真的功能"，
-     * 它只出现在 tooltip / GUI / Jade 三处<b>显示</b>，不参与任何并行或时长运算。
+     * <h2>⛔ 2026-09-28：下面那句"不要把它接到配方逻辑上"<u>已作废</u></h2>
+     * <pre>
+     * ⛔ 旧原文（作废，逐字留档）：
+     *    ⚠️ 不要把它接到配方逻辑上：本轮明确"别把它做成真的功能"，
+     *    它只出现在 tooltip / GUI / Jade 三处显示，不参与任何并行或时长运算。
+     * </pre>
+     * <b>作废原因</b>：用户 2026-09-28 点单「我们要给模块添加跨配方并行（线程）了」⇒
+     * 本轮<b>就是要</b>把它接上。现在它是<b>基础值</b>，真实值 =
+     * {@code 本常量 + 线程槽提供的额外值}，见 {@link #getCrossRecipeThreads()}。
+     * <p>⚠️ <b>别名</b>：{@link ShanhaiConcurrencyTables#BASE_CROSS_RECIPE_THREADS} 是同一个数
+     * （那个类要给 KubeJS 读，不能引用本类）。两者都是 {@code 1}，由
+     * {@link #assertParallelTablesConsistent()} 的加载期自检盯着。
      */
     public static final int CROSS_RECIPE_THREADS = 1;
 
@@ -234,59 +258,139 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
      * 与本工程 {@code PrimordialMatterRecombinatorCore} 里那张<b>老表 17/17 逐项吻合</b>
      * ⇒ 对照表本身是对的，这套映射不是猜的。
      */
-    private static final Map<String, Long> PARALLEL_TABLE_STANDARD = new LinkedHashMap<>();
+    private static final Map<String, Long> PARALLEL_TABLE_STANDARD = ShanhaiConcurrencyTables.standardParallelTable();
 
-    /** <b>表#1</b>（上游 3 台）。数值 = 本工程 {@code PrimordialMatterRecombinatorCore} 原表，逐字搬运。 */
-    private static final Map<String, Long> PARALLEL_TABLE_ENHANCED = new LinkedHashMap<>();
+    /**
+     * <b>表#1</b>（上游 3 台）。数值 = 本工程 {@code PrimordialMatterRecombinatorCore} 原表，逐字搬运。
+     *
+     * <p>🔴 <b>2026-09-28：两张表的数据实体搬到 {@link ShanhaiConcurrencyTables}</b>
+     * —— 因为 KubeJS 的物品描述也要用同一批数字（"各等级物质模块提供的并行数"），
+     * 而 KubeJS 只能 {@code Java.loadClass} 一个<b>不依赖 Minecraft 的</b>类。
+     * 这里<b>只留两个引用</b>，数据仍然只有一份（本工程今天刚因"两份真源"吃过亏）。
+     * 表的内容<b>一个字符都没改</b>，且有 {@link #assertParallelTablesConsistent()} 在加载期逐项核对。
+     */
+    private static final Map<String, Long> PARALLEL_TABLE_ENHANCED = ShanhaiConcurrencyTables.enhancedParallelTable();
 
-    static {
-        // 17 个 id 必须与 ShanhaiItems 的注册 id【逐字相同】（拼错一个字 ⇒ 静默退回基础 64）。
-        // ───── 表#2/#3 ───── 上游出处：PrimordialEngravingModule:86-105
-        //                       / PrimordialParallelProcessingModuleBase:54-65
-        PARALLEL_TABLE_STANDARD.put("shanhai:introductory_material_module", 128L);                     // wzrm
-        PARALLEL_TABLE_STANDARD.put("shanhai:basic_material_module", 256L);                            // wzjc
-        PARALLEL_TABLE_STANDARD.put("shanhai:material_deduction_module", 512L);                        // wzcz1
-        PARALLEL_TABLE_STANDARD.put("shanhai:transformation_material_module", 2048L);                  // wzsb
-        PARALLEL_TABLE_STANDARD.put("shanhai:material_recombination_module", 16384L);                  // wzcz2
-        PARALLEL_TABLE_STANDARD.put("shanhai:imaginary_material_transition_remolding_module", 65536L);  // wzqs
-        PARALLEL_TABLE_STANDARD.put("shanhai:zeroing_material_module", 524288L);                       // wzgl
-        PARALLEL_TABLE_STANDARD.put("shanhai:dimensional_ascension_material_module", 2097152L);        // wzsw
-        PARALLEL_TABLE_STANDARD.put("shanhai:transfinite_material_module", 268435456L);                // wzcx
-        PARALLEL_TABLE_STANDARD.put("shanhai:eternal_material_module", 2147483647L);                   // wzyh
-        PARALLEL_TABLE_STANDARD.put("shanhai:material_creation_module", 4611686018427387903L);         // wzcz3
-        PARALLEL_TABLE_STANDARD.put("shanhai:genesis_reality_modification_module", Long.MAX_VALUE);    // create_mk
-        PARALLEL_TABLE_STANDARD.put("shanhai:reality_anchor_module", 6917529027641081855L);            // reality_anchor_module
-        PARALLEL_TABLE_STANDARD.put("shanhai:dark_star_material_module", 4096L);                       // wzax
-        PARALLEL_TABLE_STANDARD.put("shanhai:virtual_image_material_module", 1024L);                   // wzxc
-        PARALLEL_TABLE_STANDARD.put("shanhai:apex_material_module", 1048576L);                         // wzhy
-        PARALLEL_TABLE_STANDARD.put("shanhai:chaos_material_module", 536870912L);                      // wzdf
-
-        // ───── 表#1 ───── 上游出处：PrimordialMatterRecombinatorCore:86-105
-        //                   （本工程核心那张老表，数值一字未改，只搬到基类）
-        PARALLEL_TABLE_ENHANCED.put("shanhai:introductory_material_module", 256L);                     // wzrm
-        PARALLEL_TABLE_ENHANCED.put("shanhai:basic_material_module", 1024L);                           // wzjc
-        PARALLEL_TABLE_ENHANCED.put("shanhai:material_deduction_module", 2048L);                       // wzcz1
-        PARALLEL_TABLE_ENHANCED.put("shanhai:virtual_image_material_module", 1024L);                   // wzxc（与基础模块同为 1024，非笔误）
-        PARALLEL_TABLE_ENHANCED.put("shanhai:transformation_material_module", 8192L);                  // wzsb
-        PARALLEL_TABLE_ENHANCED.put("shanhai:dark_star_material_module", 4096L);                       // wzax
-        PARALLEL_TABLE_ENHANCED.put("shanhai:material_recombination_module", 16384L);                  // wzcz2
-        PARALLEL_TABLE_ENHANCED.put("shanhai:imaginary_material_transition_remolding_module", 65536L);  // wzqs
-        PARALLEL_TABLE_ENHANCED.put("shanhai:zeroing_material_module", 524288L);                       // wzgl
-        PARALLEL_TABLE_ENHANCED.put("shanhai:apex_material_module", 1048576L);                         // wzhy
-        PARALLEL_TABLE_ENHANCED.put("shanhai:dimensional_ascension_material_module", 2097152L);        // wzsw
-        PARALLEL_TABLE_ENHANCED.put("shanhai:transfinite_material_module", 268435456L);                // wzcx
-        PARALLEL_TABLE_ENHANCED.put("shanhai:chaos_material_module", 536870912L);                      // wzdf
-        PARALLEL_TABLE_ENHANCED.put("shanhai:eternal_material_module", 2147483647L);                   // wzyh
-        PARALLEL_TABLE_ENHANCED.put("shanhai:material_creation_module", 4611686018427387903L);         // wzcz3
-        PARALLEL_TABLE_ENHANCED.put("shanhai:reality_anchor_module", 6917529027641081855L);            // reality_anchor_module
-        PARALLEL_TABLE_ENHANCED.put("shanhai:genesis_reality_modification_module", Long.MAX_VALUE);    // create_mk
-    }
+    // ⛔ 2026-09-28：这里原本有一段 `static { … 34 行 put … }`，数据已整体搬到
+    //    ShanhaiConcurrencyTables（见上面两个字段的注释）。块本身删掉而不是留空，
+    //    以免将来有人在空块里又补一份 put（那就是第二份真源）。
 
     /** 当前并行上限（成形即扫一次，之后每 {@link #PARALLEL_SCAN_INTERVAL} tick 重扫）。 */
     private long currentParallel = DEFAULT_PARALLEL;
     /** 并行槽重扫订阅。 */
     @Nullable
     private TickableSubscription matterSlotScanSubs;
+
+    // ═════════════════════════ 玩家可调的并行数（2026-09-27 新增） ═════════════════════════
+
+    /**
+     * 🔴 <b>玩家覆盖的并行数上限；{@code 0} = 未覆盖（跟随物质模块表）。</b>
+     *
+     * <h2>用户原话（逐字）</h2>
+     * <blockquote>「在模块和主机的左下角再新增一个全新的按钮，他可以调节主机或者模块的并行数，
+     * 作为一个输入框，可以让玩家输入数字，并且右边有一个一键调至最大的按钮」</blockquote>
+     *
+     * <h2>为什么是一个"读取点覆盖"而不是"写进 {@link #currentParallel}"</h2>
+     * {@code currentParallel} 的唯一运行期写者是 {@code scanMatterSlot()}，<b>每 3 tick 无条件覆写一次</b>
+     * （{@link #PARALLEL_SCAN_INTERVAL}；成形时先扫一次，见 {@code startMatterSlotScan()}）。
+     * 若把玩家的值写进那个字段，下一次重扫就会把它冲掉（表现："输入框里的数过 3 tick 自己变回去了"）。
+     * ⇒ 覆盖值单独存，并在<b>读取点</b>优先 —— 自动值照旧每 3 tick 更新（玩家一清覆盖就立刻跟上）。
+     *
+     * <h2>{@code @Persisted} / {@code @DescSynced} 为什么两个都要（本工程既有纪律）</h2>
+     * <ul>
+     *   <li>{@code @Persisted}：拆装 / 存档重载后保持（任务书硬要求「存档持久化」）；</li>
+     *   <li>{@code @DescSynced}：<b>没有它，客户端永远读到 0</b> —— 输入框的值来自
+     *       {@code TextFieldWidget} 的 {@code textSupplier}，那份 supplier 在两侧都会跑，
+     *       客户端读到的是本地镜像。这正是本工程红线「活的界面上不许放假数据」的既有判定
+     *       （同款理由见 {@code PrimordialOmegaEngineMachine#limitedDuration} 的 javadoc）。</li>
+     *   <li>两个注解都只对<b>写在本类里</b>的字段生效：本类的 {@code MANAGED_FIELD_HOLDER} 是
+     *       {@code new ManagedFieldHolder(PrimordialModuleMachine.class, …)}，按【类】反射登记字段
+     *       ⇒ 字段写在这里就自动进 holder，不需要动 holder 那一行。</li>
+     * </ul>
+     */
+    @Persisted
+    @DescSynced
+    private long parallelOverride = ParallelOverrideMachine.PARALLEL_AUTO;
+
+    @Override
+    public long getParallelOverride() {
+        return parallelOverride;
+    }
+
+    /**
+     * 写入覆盖值。<b>先钳位 → 没变就直接返回 → 真变了才 {@code notifyBlockUpdate()}</b>
+     * —— 与 {@code PrimordialOmegaEngineMachine#setLimitedDuration(int)} 逐字同形
+     * （那是本工程"玩家改一个数、它被校验并同步"的既有规范写法）。
+     *
+     * <p>为什么必须在这里再钳一次：输入框那两道 {@code setNumbersOnly} 校验器（客户端 + 服务端）
+     * 挡得住手打与正常回放，但<b>网络包不保证只带合法值</b>（伪造的 client action）。
+     *
+     * <p>🔴 <b>2026-09-27 钳位口径改正（用户实机提出）</b>：
+     * <pre>
+     *   ⛔ 上一版：clampOverride(value) ⇒ 上钳到 Long.MAX_VALUE（等于不钳）
+     *   ✅ 现行  ：clampOverrideToCeiling(value) ⇒ 上钳到【本模块当前能达到的并行数】
+     *             （= 设 0 时机器能达到的那个并行数；默认 64，随物质模块每 3 tick 变）
+     * </pre>
+     * 用户原话（逐字）：「也不允许玩家输入超出机器可以达到最大并行数的数字」。
+     * <p>超限时是<b>钳到天花板</b>而不是拒绝：服务端钳完会经 {@code @DescSynced} 回灌，
+     * 输入框里显示的就是钳过的权威值（见 {@code ParallelOverrideConfigurator} 的类注释 ④）。
+     */
+    @Override
+    public void setParallelOverride(long value) {
+        final long next = clampOverrideToCeiling(value);
+        if (next == parallelOverride) {
+            return;
+        }
+        parallelOverride = next;
+        notifyBlockUpdate();
+    }
+
+    /**
+     * 🔴 <b>本模块当前能达到的并行数 —— 「一键最大」填的就是它（2026-09-27 语义改正）。</b>
+     *
+     * <pre>
+     *   ⛔ 上一版：返回 ParallelOverrideMachine.PARALLEL_MAX（= Long.MAX_VALUE）
+     *             —— 一键最大会把 9223372036854775807 塞进输入框，且实际跑多少仍受输入量限制，
+     *                那个数对玩家是【不可验证】的（本工程红线：活的界面上不许放假数据）
+     *   ✅ 现行  ：返回 {@link #getAutoParallel()} = {@code currentParallel}
+     *             —— 与用户口径逐字对齐：「一键最大是到机器可以达到的并行数
+     *                （也就是设置 0 时机器的并行数）」
+     * </pre>
+     * <p>默认值 = {@link #DEFAULT_PARALLEL}（64，即"不加任何物质模块它本身就有 64 的并行数"），
+     * 随物质模块每 {@link #PARALLEL_SCAN_INTERVAL} tick 重算 ⇒ <b>一键最大填的是"此刻"能跑的数</b>。
+     * <p>{@code max(1, …)} 是服务端兜底：{@code currentParallel} 被落盘数据改坏成 0 时，
+     * 天花板退化为"只能自动"，而不是让玩家写进一个 0 造成"覆盖值 = 0 = 自动"的歧义。
+     */
+    @Override
+    public long getParallelOverrideCeiling() {
+        return Math.max(1L, currentParallel);
+    }
+
+    @Override
+    public long getAutoParallel() {
+        return currentParallel;
+    }
+
+    /**
+     * 覆盖生效之后的并行。
+     *
+     * <p>⚠️ 与 {@link #getCurrentParallel()} 必须同源同值 —— 后者才是引擎读的那个数（见该方法）。
+     *
+     * <p>🔴 2026-09-27：多了一道 {@code min(…, 天花板)}。
+     * 写入时已经钳过（{@link #setParallelOverride}），这里再钳一次是为了兜住
+     * <b>"天花板事后变小"</b> 这一档：{@code currentParallel} 每 3 tick 跟着物质模块重算，
+     * 玩家拆掉物质模块后自动值会掉下来，而覆盖值<b>是存下来的数、不会自己跟着变</b>
+     * ⇒ 没有这一句就会出现「输入框写着 4096，机器能达到的只有 64」这种只在本工程红线里
+     * 被点名的假数据。钳在这里 ⇒ 显示与生效同时收敛到真实可达值。
+     */
+    @Override
+    public long getEffectiveParallel() {
+        final long auto = Math.max(1L, currentParallel);
+        if (parallelOverride > ParallelOverrideMachine.PARALLEL_AUTO) {
+            return Math.min(parallelOverride, auto);
+        }
+        return auto;
+    }
 
     /**
      * <b>并行槽自检（加载期 fail-fast + 一条可 grep 的日志）。</b>
@@ -309,6 +413,47 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
         checkParallelTable(PARALLEL_TABLE_STANDARD, "STANDARD（表#2/#3）");
         checkParallelTable(PARALLEL_TABLE_ENHANCED, "ENHANCED（表#1）");
         checkParallelArithmetic();
+        // 🔴 2026-09-28 追加：世线残片表的加载期自检（正面对照 8 条 + 两张表键集合一致性）。
+        //    挂在这里的理由与下面那条相同：本方法已由 ModuleRegistry#init() 在【注册期】调用，
+        //    所以它是"加载期必跑 + 日志可 grep"的既有入口，不需要新增任何加载钩子。
+        ShanhaiMod.LOGGER.info(ShanhaiConcurrencyTables.selfTest());
+        // 🔴 2026-09-29 追加：跨配方"公平分配"纯算术核的加载期自检
+        //    （正面对照 6 条 + 负面对照 1 条 —— 负面对照正是【贪心把第二条饿死】那一档，
+        //     也就是用户实机报的"一种挤占了另一种"）。
+        //    ⚠️ 这一条是"挤占"这条修复在【无头专服里唯一跑得到】的判据：
+        //       [SHANHAI-MODULE-ENGINE] / [SHANHAI-PARALLEL-LONG] 都只在"世界上真有一台成型模块在跑"时
+        //       才打（上一位实测：专服里 0 条），而本行是纯函数、注册期必跑。
+        ShanhaiMod.LOGGER.info(ShanhaiFairAllocation.selfTest());
+        // 🔴 2026-09-30 追加：多配方聚合档「批处理」纯算术核的加载期自检
+        //    （正面对照 2 条 + 负面对照 5 类 —— 其中最关键的一档是
+        //     【某条 origin 的额外料预检不过 ⇒ 真扣调用次数必须是 0】，
+        //     也就是本工程血规矩「宁可跳过批处理，也绝不少扣料 / 不猜一个数」的形式化断言）。
+        //    与上一条同理由：纯函数、注册期必跑、无头专服里就能跑，日志可 grep。
+        ShanhaiMod.LOGGER.info(ShanhaiBatchPlan.selfTest());
+        // 🔴 2026-09-30 追加：并行预算纯算术核的加载期自检（恒等 11 档 + 用户实测档 + 饱和 + 负面对照 2 条）。
+        //    它是本轮 bug（「零点能反应堆不吃跨配方并行」）在【无头专服里唯一跑得到】的判据：
+        //    现象本身只发生在"世界上真有一台成型模块在跑"的时候，而本行是纯函数、注册期必跑。
+        ShanhaiMod.LOGGER.info(ShanhaiParallelBudget.selfTest());
+        // 🔴 2026-09-30（同日第二轮）追加：**并行进 long 档 ⇒ 配方时长下限 10 tick** 的纯算术核自检
+        //    （恒等 11 档 × 7 个时长 + 边界 2 条 + 正面对照 3 条 + 负面对照 3 条）。
+        //    它是用户那句「这个配方加到 long 之后可以加一个最小配方时长为 10tick」在
+        //    【无头专服里唯一跑得到】的判据：下限真正生效得等"世界上一台成型模块跑起来且并行进 long 档"，
+        //    而本行是纯函数、注册期必跑。
+        ShanhaiMod.LOGGER.info(ShanhaiDurationFloor.selfTest());
+        // 🔴 2026-09-30（同日第五轮）追加：**配方对象级别**的加载期判据。
+        //    用户明确要求「自证里至少一条是"读实际 duration"……别只断言"函数被调用了"」——
+        //    上一轮的病正是"函数调了但没生效"（min(10, 1) = 1 ⇒ 目标 == 现值 ⇒ 静默返回）。
+        //    上面那条 selfTest() 查的是纯算术核的**返回数**；这一条拿一个**真实 GTRecipe 实例**
+        //    喂进生产落点，再从**产出的配方对象上读 duration**。两件事都会坏、坏法不同 ⇒ 都要有。
+        ShanhaiMod.LOGGER.info(PrimordialRecipeEffects.selfTestDurationFloorOnRealRecipe());
+        // 🔴 跨类一致性（这一条只能在装载了 Minecraft 类的地方断言，所以放在这里而不是纯核里）：
+        //    纯核的下限常量必须与主机侧 GUI 允许的【最小下限】同值 —— 两处各自硬编码必然漂移，
+        //    而漂移的表现是"抬头写着 10、玩家在主机侧栏能调到 5"，谁也看不出来。
+        if (ShanhaiDurationFloor.LONG_SCALE_MIN_DURATION != PrimordialRecipeEffects.MIN_LIMITED_DURATION) {
+            throw new IllegalStateException("[SHANHAI-DURATION-FLOOR] 加载期自检失败：long 档时长下限 "
+                    + ShanhaiDurationFloor.LONG_SCALE_MIN_DURATION + " 与主机侧最小下限 "
+                    + PrimordialRecipeEffects.MIN_LIMITED_DURATION + " 不等 ⇒ 两处已经漂移。");
+        }
         // 🔴 2026-09-26 追加：发电模块产出算式的加载期自检（正向对照 + 负面对照 + 两条用户实测数）。
         //    挂在这里的理由：本方法已经由 ModuleRegistry#init() 在【注册期】调用（那行不改），
         //    所以这是"加载期必跑 + 日志可 grep"的既有入口，不需要新增任何加载钩子。
@@ -561,6 +706,29 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
     @Persisted
     protected final NotifiableItemStackHandler extraMountSlots;
 
+    /**
+     * 🆕 <b>恒星热力槽 ×1（2026-09-30 用户点单）</b> —— 画在<b>世线残片槽（{@code threadBoostSlot}）的正下方</b>。
+     *
+     * <p>用户原话（逐字）：「给原初太虚宇宙锻炉，原初永恒熔炼炉，原初分子裂隙核心，它们放置世线残片的
+     * 那个格子下面再加一个格子，用来放置线圈/恒星热力容器，分别给配方：合金冶炼炉，电力高炉，超维度熔炼，
+     * 混沌炼金，星焰跃迁，恒星热能熔炼，深度扭曲化学仪提供温度/恒星热力容器等级，都需要放满64个才能生效，
+     * 若选择其他配方则无视这个格子，并在 jade 显示（配方未执行成功原因）」。
+     *
+     * <p>🔴 <b>为什么这个字段在【基类】而不是只在那三台机器上</b>：
+     * 用户点名的三台（{@code taixu_smelting_furnace} / {@code primordial_eternal_smelting_furnace} /
+     * {@code primordial_molecular_rift_core}）全部是 {@code StandardPrimordialModule}，
+     * 与其余 23 台<b>共用同一个类体</b>（类体里只有构造器）⇒ 只给那三台加槽要么新开三个子类，
+     * 要么在基类里按 id 特判（后者是把"哪台机器有槽"散进逻辑，最容易在加机器时静默漏掉）。
+     * 而**生效面是按配方类型判的**（{@link ShanhaiHeatGate#GATED_TYPE_IDS}），
+     * 别的机器跑的配方压根没有那两个键 ⇒ 槽对它们**自动无效**（用户原话「若选择其他配方则无视这个格子」）。
+     * ⇒ 所以 26 台一律画出这一格，行为差异全在配方侧。这是本实现对任务书的<b>一处有意偏离</b>，已写进交付报告。
+     *
+     * <p>过滤在构造器里设（{@link ShanhaiHeatSources#isAccepted}）：只收 {@code CoilBlock} 一族
+     * 与三种 gtlcore 恒星热力容器。温度/等级**一个数字都不写死**，全部现读。
+     */
+    @Persisted
+    protected final NotifiableItemStackHandler heatSlot;
+
     // ───────────────────────── 连接状态 ─────────────────────────
     /** 已连接主机坐标。<b>持久化</b>；找不到主机时不抹掉（见类注释 §3）。 */
     @Nullable
@@ -580,6 +748,9 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
                 .setFilter(PrimordialModuleMachine::isMatterModuleStack);
         this.threadBoostSlot = new NotifiableItemStackHandler(this, 1, IO.NONE, IO.BOTH);
         this.extraMountSlots = new NotifiableItemStackHandler(this, 3, IO.NONE, IO.BOTH);
+        // 🆕 恒星热力槽：只收加热线圈（CoilBlock）与三种恒星热力容器。空槽恒放行（否则取不出来）。
+        this.heatSlot = new NotifiableItemStackHandler(this, 1, IO.NONE, IO.BOTH)
+                .setFilter(PrimordialModuleMachine::isHeatSlotStack);
     }
 
     // ═════════════════════════════ 1.4 N6「配方最短耗时」· ⛔ 模块侧已按用户裁决【整体删除】（2026-09-26） ═════════════════════════════
@@ -688,12 +859,155 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
             SlotWidget threadSlotWidget = new SlotWidget(threadBoostSlot.storage, 0,
                     size.width - 30, size.height - 48, true, true);
             threadSlotWidget.setBackground(SlotWidget.ITEM_SLOT_TEXTURE);
-            threadSlotWidget.setHoverTooltips(
-                    Component.literal("§d§l线程倍率槽"),
-                    Component.literal("§7阶段 1：只收物品，不参与计算（规格 §7.1）"));
+            threadSlotWidget.setHoverTooltips(shanhai$threadSlotTooltips());
             group.addWidget(threadSlotWidget);
+
+            // 🆕 2026-09-30：恒星热力槽 —— 用户原话「它们放置世线残片的那个格子【下面】再加一个格子」。
+            //    纵坐标口径与上面两格逐字同一条：每格 20 px（size.height-68 → -48 → -28）。
+            //    框高 125（基类 WorkableElectricMultiblockMachine.createUIWidget() = WidgetGroup(0,0,190,125)，
+            //    字节码实证），槽本身 18 px ⇒ y=97、下沿 115，仍在框内。
+            //
+            //    🔴 2026-09-30 二改（用户选择题答案逐字：「B. 只留那三台」）：
+            //       这一格**只在那三台机器上显示**（白名单 = ShanhaiHeatGate.HEAT_SLOT_MACHINE_IDS），
+            //       其余 23 台【没有】这一格。
+            //       ⚠️ 槽位 handler（heatSlot 字段）仍然留在基类上 —— 它是 @Persisted 的，
+            //          拿掉会让"曾经放过东西的存档"加载时报字段缺失；而且将来要放开白名单时
+            //          不必再动持久化。**看得见 / 看不见**是 UI 层的事实，由下面这一句决定。
+            //       🔴 "白名单写错 id ⇒ 静默少一格"这条风险由 ModuleRegistry.init() 的注册期硬自检堵住
+            //          （ShanhaiHeatGate.verifyMachineIds 是纯函数，可离线驱动）。
+            if (ShanhaiHeatGate.hasHeatSlot(shanhai$machineId())) {
+                SlotWidget heatSlotWidget = new SlotWidget(heatSlot.storage, 0,
+                        size.width - 30, size.height - 28, true, true);
+                heatSlotWidget.setBackground(SlotWidget.ITEM_SLOT_TEXTURE);
+                heatSlotWidget.setHoverTooltips(shanhai$heatSlotTooltips());
+                group.addWidget(heatSlotWidget);
+            }
         }
         return widget;
+    }
+
+    /**
+     * 本机的注册 id（形如 {@code shanhai:taixu_smelting_furnace}）—— 白名单判据用的那一份。
+     *
+     * <p>取值口径与 {@code ModuleRegistry.init()} 的自检**同源**：那一边用 {@code "shanhai:" + SPECS.path()}，
+     * 这一边用方块注册表键（Registrate 的 {@code .multiblock(path, …)} 注册出来的就是 {@code shanhai:<path>}；
+     * 旁证：方块 lang 键全部是 {@code block.shanhai.<path>}）。
+     *
+     * <p>缓存：机器方块永不改变 ⇒ 算一次足够；{@code createUIWidget()} 客户端每开一次 GUI 都会调，
+     * 每次都查注册表是纯浪费。取不到键时缓存空串（空串不在白名单里 ⇒ 安全降级为"不显示"）。
+     */
+    @NotNull
+    private String shanhai$machineId() {
+        if (shanhai$cachedMachineId == null) {
+            final ResourceLocation key = ForgeRegistries.BLOCKS.getKey(getBlockState().getBlock());
+            shanhai$cachedMachineId = key == null ? "" : key.toString();
+        }
+        return shanhai$cachedMachineId;
+    }
+
+    /** {@link #shanhai$machineId()} 的缓存（{@code null} = 还没算过；空串 = 取不到注册键）。 */
+    @Nullable
+    private String shanhai$cachedMachineId;
+
+    /**
+     * <b>「恒星热力槽」的悬浮说明</b> —— 全部是<b>活值</b>：每帧按槽里真实内容重算。
+     *
+     * <p>口径与 {@link #shanhai$threadSlotTooltips()} 一致：显示可以随槽实时变，<b>不需要额外同步</b>
+     * （{@code heatSlot} 是 {@code @Persisted} 的 {@code NotifiableItemStackHandler}，
+     * LDLib 自己会把内容同步给客户端，本方法读到的是同一份已同步的 storage）。
+     */
+    private Component[] shanhai$heatSlotTooltips() {
+        final ItemStack stack = heatSlot.storage.getStackInSlot(0);
+        final int count = stack.getCount();
+        final ShanhaiHeatSources.Source src = ShanhaiHeatSources.of(stack);
+        final boolean active = count >= ShanhaiHeatGate.REQUIRED_COUNT && !src.isEmpty();
+
+        final String stateLine;
+        if (stack.isEmpty()) {
+            stateLine = "§8状态：空槽 ⇒ 不提供炉温，也不提供容器等级";
+        } else if (src.isEmpty()) {
+            stateLine = "§8状态：§f" + stack.getHoverName().getString() + "§8 不是线圈也不是恒星热力容器";
+        } else if (count < ShanhaiHeatGate.REQUIRED_COUNT) {
+            stateLine = "§c状态：§f" + stack.getHoverName().getString() + "§c × " + count
+                    + " ⇒ §c未放满 " + ShanhaiHeatGate.REQUIRED_COUNT + " 个，不生效";
+        } else {
+            stateLine = "§a状态：§f" + stack.getHoverName().getString() + "§a × " + count
+                    + " ⇒ §a已生效";
+        }
+
+        return new Component[] {
+                Component.literal("§c§l恒星热力槽"),
+                Component.literal("§7放在这里的东西，只对 7 个配方类型生效："),
+                Component.literal("§8  合金冶炼炉 / 电力高炉 / 超维度熔炼 / 混沌炼金"),
+                Component.literal("§8  星焰跃迁 / 恒星热能熔炼 / 深度化学扭曲仪"),
+                Component.literal("§7放【线圈】⇒ 提供炉温；放【恒星热力容器】⇒ 提供容器等级"),
+                Component.literal("§7必须放满 §f" + ShanhaiHeatGate.REQUIRED_COUNT + " §7个才生效（当前 "
+                        + (count >= ShanhaiHeatGate.REQUIRED_COUNT ? "§a" : "§c") + count + "§7）"),
+                Component.literal("§7本槽提供：" + (active ? "§b" : "§8") + src.describe()),
+                Component.literal("§7其他配方无视这一格"),
+                Component.literal(stateLine),
+        };
+    }
+
+    /** 槽位过滤器：恒星热力槽只收加热线圈与恒星热力容器（空槽恒放行）。 */
+    public static boolean isHeatSlotStack(@Nullable ItemStack stack) {
+        return ShanhaiHeatSources.isAccepted(stack);
+    }
+
+    /**
+     * <b>「跨配方并行（线程）槽」的悬浮说明（2026-09-28 改）</b> —— 把旧的占位文案换成真实语义。
+     *
+     * <h2>⛔ 旧文案（作废，逐字留档）</h2>
+     * <pre>
+     *   §d§l线程倍率槽
+     *   §7阶段 1：只收物品，不参与计算（规格 §7.1）
+     * </pre>
+     * 它当时是<b>真话</b>（那时确实不参与计算）；用户 2026-09-28 点单把它接上之后，
+     * 这句话就变成<b>假话</b>了 —— 本项目明令禁止"活的假数据"，所以整段换掉而不是留着。
+     *
+     * <h2>现在的六行</h2>
+     * <pre>
+     *   ① §d§l跨配方并行（线程）槽        ← 槽名（与用户图 2 的叫法对齐）
+     *   ② §7放入【世线残片】…             ← 它收什么
+     *   ③ §7残片单枚：1号=2 / … / 超限器=1024   ← 由 ShanhaiConcurrencyTables 现算，不手写
+     *   ④ §7公式：最终 = 1 + 单枚值 × 该格数量
+     *   ⑤ §7最终跨配方并行（线程）：§b&lt;当前真值&gt;  ← 【当前实际加了多少】就写在这里
+     *   ⑥ 状态行：空槽 / 非残片 / 命中哪一种残片（含数量）
+     * </pre>
+     * 🔴 <b>第 ⑤⑥ 行是"活值"</b>：每帧按槽里真实内容重算（{@link #getCrossRecipeThreads()}），
+     * 所以玩家把残片丢进去能<b>当场看到数字变</b> —— 这就是进游戏验收时"怎么判断对错"的依据。
+     * <p>⚠️ 显示可以随槽实时变，但<b>不需要</b>额外同步：{@code threadBoostSlot} 是
+     * {@code @Persisted} 的 {@code NotifiableItemStackHandler}，LDLib 自己会把内容同步给客户端，
+     * 而本方法在客户端重建 tooltip 时读的就是同一份已同步的 storage。
+     */
+    private Component[] shanhai$threadSlotTooltips() {
+        final ItemStack stack = threadBoostSlot.storage.getStackInSlot(0);
+        final int extra = getExtraCrossRecipeThreads();
+        final int total = getCrossRecipeThreads();
+
+        final String stateLine;
+        if (stack.isEmpty()) {
+            stateLine = "§8状态：空槽 ⇒ 不提供额外线程（当前 = 1）";
+        } else if (extra <= 0) {
+            // 🔴 2026-09-30：名字先剥 `&$…-` 前缀码。世线残片的中文名**全部带这个码**
+            //    （`item.shanhai.thread_shard_N` = `&$gray-世线残片·初醒` 等），而本行又含我们自己的
+            //    `§8`/`§f` ⇒ 不剥就命中「§ 与 &$ 混用 ⇒ 交回原版」⇒ 玩家在这个 tooltip 上看到的是
+            //    `§8状态：§f&$golden-世线残片·统合§8 × 64 …`（离线读数见交付报告 §14）。
+            stateLine = "§8状态：§f" + ShanhaiTextParser.stripStyleCode(stack.getHoverName().getString())
+                    + "§8 不是世线残片 ⇒ 不提供额外线程（当前 = 1）";
+        } else {
+            stateLine = "§8状态：§f" + ShanhaiTextParser.stripStyleCode(stack.getHoverName().getString())
+                    + "§8 × " + stack.getCount() + " ⇒ 额外 +" + extra;
+        }
+
+        return new Component[] {
+                Component.literal("§d§l跨配方并行（线程）槽"),
+                Component.literal("§7放入【世线残片】可提高本模块的跨配方并行（线程）"),
+                Component.literal("§7残片单枚：" + ShanhaiConcurrencyTables.shardSummary()),
+                Component.literal("§7公式：最终跨配方并行（线程） = 1 + 单枚值 × 该格数量"),
+                Component.literal("§7最终跨配方并行（线程）：" + (total > 1 ? "§b" : "§8") + total),
+                Component.literal(stateLine),
+        };
     }
 
     /**
@@ -742,6 +1056,13 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
         super.attachConfigurators(panel);
         // ⛔ 2026-09-22 作废（用户裁决）：模块侧不再挂 LimitedDurationConfigurator。
         //    panel.attachConfigurators(new LimitedDurationConfigurator(new LimitedDurationAdapter()));
+        //
+        // 🔴 2026-09-27 新增「并行数」面板（用户原话见 ParallelOverrideConfigurator 的类注释）。
+        //    位置：attach 顺序 = 自上而下，整条 ConfiguratorPanel 底对齐
+        //    （FancyMachineUIWidget.setupFancyUI 把它设成 guiHeight - panelHeight - 4，字节码）
+        //    ⇒ 挂在【末尾】就落在整条最下面 = 用户指定的「左下角」。
+        //    模块侧此前是空的（唯一那个控件 2026-09-22 被摘掉）⇒ 这是本侧第 1 个 tab，位置同一条纪律。
+        panel.attachConfigurators(new ParallelOverrideConfigurator(this));
     }
 
     /**
@@ -1106,17 +1427,22 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
         final int droppedMatter = shanhai$countSlot(matterModuleSlot);
         final int droppedThread = shanhai$countSlot(threadBoostSlot);
         final int droppedExtra = shanhai$countSlot(extraMountSlots);
-        // 三条与 GTCEu WorkableTieredMachine 同形：逐容器 clearInventory。
+        // 🆕 2026-09-30：恒星热力槽同样必须走掉落链 —— 漏掉它的后果是
+        //    「拆掉机器时那 64 个线圈直接蒸发，且不报任何错」（本项目"静默丢东西"的典型形态）。
+        final int droppedHeat = shanhai$countSlot(heatSlot);
+        // 四条与 GTCEu WorkableTieredMachine 同形：逐容器 clearInventory。
         // 幂等：clearInventory 是"取出即清空"，重复调用时槽已空 ⇒ 不会翻倍。
         clearInventory(matterModuleSlot.storage);
         clearInventory(threadBoostSlot.storage);
         clearInventory(extraMountSlots.storage);
+        clearInventory(heatSlot.storage);
         // 打印放在清空【之后】：此刻这个坐标的【新】方块状态已经写进区块
         // （字节码实证见 ModuleSlotWatch 类注释 §4）⇒ 探针打出来的 B 才是实测值。
-        final boolean counted = droppedMatter >= 0 && droppedThread >= 0 && droppedExtra >= 0;
+        final boolean counted = droppedMatter >= 0 && droppedThread >= 0 && droppedExtra >= 0 && droppedHeat >= 0;
         ModuleSlotWatch.onModuleRemoved(getLevel(), getPos(),
-                counted ? droppedMatter + droppedThread + droppedExtra : -1,
-                "物质模块槽=" + droppedMatter + " 线程槽=" + droppedThread + " 外加槽=" + droppedExtra);
+                counted ? droppedMatter + droppedThread + droppedExtra + droppedHeat : -1,
+                "物质模块槽=" + droppedMatter + " 线程槽=" + droppedThread
+                        + " 外加槽=" + droppedExtra + " 热力槽=" + droppedHeat);
     }
 
     /** 数一个槽里现在有几件物品（只读；给 {@code [SHANHAI-SLOT-WATCH]} 取证探针用）。 */
@@ -1240,7 +1566,12 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
     @Nullable
     private UUID shanhai$wirelessUuid;
 
-    /** 生产日志的节流缓存（值变了就打、否则每 5 秒打一次）。 */
+    /**
+     * ⚠️ 2026-10-01（用户点单「日志的问题」）：<b>本字段已不再是任何判定的输入</b> ——
+     * 「入池并排」那一行的节流改由 {@link ShanhaiLogThrottle.Gate} 负责（Δ==Y 且接受 ⇒ 一律不打）。
+     * 保留声明是照本工程「改判时旧文不删、只加注」的惯例：老日志里那 128 行是它节流出来的，
+     * 读旧日志时仍然需要知道它当时的口径是「值变了就打、否则每 5 秒打一次」。
+     */
     @Nullable
     private BigInteger shanhai$lastLoggedProduction;
 
@@ -1435,14 +1766,38 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
     private BigInteger shanhai$auditLastPool;
 
     /**
-     * 🔴 <b>池审计（2026-09-26，用户报"批处理下不守恒"专用）</b>：每 20 tick（= 1 秒）一行，把
-     * <b>"池子这一秒涨了多少"</b> 与 <b>"我这台自己入账了多少"</b> 并排打出来。
+     * 🔴 <b>池审计那一行的闸门（2026-10-01 用户点单「日志的问题」）。</b>
+     *
+     * <p>实测本行打了 <b>631 次</b>，而差额<b>恒为负</b>（631/631），绝对值只有两种量级
+     * （{@code -|1e18} 与 {@code -|1e17}）。
+     * <p>🔴 <b>2026-10-01 用户拍板</b>：这一档（差额 &lt; 0 且 |差额| ≤ 1e19）= <b>已知带</b>
+     * ⇒ <b>静默（一行都不打）</b>；差额 ≥ 0，或 |差额| &gt; 1e19 ⇒ <b>当场 WARN</b>。
+     * 判定本体在 {@link ShanhaiLogThrottle#decidePoolAudit}（纯 JDK；离线可单跑自检）。
+     */
+    private final ShanhaiLogThrottle.Gate shanhai$poolAuditGate = new ShanhaiLogThrottle.Gate();
+
+    /**
+     * 🔴 <b>池审计（2026-09-26，用户报"批处理下不守恒"专用）</b>：每 20 tick（= 1 秒）结算一次，
+     * 把 <b>"池子这一段涨了多少"</b> 与 <b>"我这台自己入账了多少"</b> 并排算出差额。
      *
      * <h2>为什么必须有它（队长那两条读数之差就是这么算错的）</h2>
      * gtmthings 的池子是<b>按队伍（team uuid）共享</b>的 ⇒ 同一 uuid 下<b>任何</b>机器的产出都进同一个数。
      * 只看"池子两条读数之差"会把<b>别人的产出</b>算到本机头上。
-     * ⇒ 本行给的是可判定的对账：{@code Δ总 − 我这台 Σ = 差额}；
-     * 差额若 ≈ <b>9.223e18/tick 量级</b>，说明有<b>饱和 long</b> 的投递在往里写（那才是"料电不符"的来源）。
+     * ⇒ 本行给的是可判定的对账：{@code Δ总 − 我这台 Σ = 差额}。
+     *
+     * <h2>🔴 2026-10-01 改了什么（用户点单「日志的问题」，含用户当天拍板）</h2>
+     * <pre>
+     *   原来：每 20 tick 无条件打一行（实测 631 行 / 13 分钟）
+     *   现在：差额落在「已知带」（**差额 &lt; 0 且 |差额| ≤ 1e19**）⇒ **静默：一行都不打**
+     *         （静默次数不丢，随下一条真正落盘的 WARN 行一起报出）。
+     *         差额 ≥ 0（正 或 零），或 |差额| &gt; 1e19 ⇒ **当场 WARN**。
+     * </pre>
+     * ⚠️ 参考读数（用户实测 631 行全量）：差额<b>恒为负</b>（631/631，{@code Δ总 < 我这台 Σ}），
+     * 绝对值落在 {@code [6.27e17, 1.66e18]} ⇒ 按新口径**改后落盘 0 行**（作者原先的实现是 2 行）。
+     * 1e19 比实测上限 1.66e18 宽约一档；并且用户口径把 <b>0 也划进异常档</b>。
+     * <p>🔴 <b>哪一侧才是真异常，仍待用户确认</b>：老注释写的是「差额 = 别的写者」（= 别的写者在<b>加</b>），
+     * 而实测方向是<b>反的</b> —— {@code Δ总} 比本机投递的<b>少</b>。
+     * 本事后注释只陈述实测，不再替用户断言"别的写者是谁"。
      */
     private void shanhai$auditPool(@NotNull UUID uuid, @NotNull BigInteger poolNow) {
         if (getOffsetTimer() % 20L != 0L) {
@@ -1451,10 +1806,27 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
         if (shanhai$auditLastPool != null) {
             final BigInteger deltaTotal = poolNow.subtract(shanhai$auditLastPool);
             final BigInteger others = deltaTotal.subtract(shanhai$auditMine);
-            ShanhaiMod.LOGGER.info("{} 池审计（最近 20 tick）：Δ总={} ／ 我这台 Σ={}（{} 次入池）／ 差额={}"
-                            + "（差额 = 别的写者；≈9.223e18/tick 量级 ⇒ 有饱和 long 投递）pos={}",
-                    PrimordialGeneratorProduction.TAG, deltaTotal, shanhai$auditMine, shanhai$auditDeposits,
-                    others, getPos());
+            final ShanhaiLogThrottle.Verdict v = ShanhaiLogThrottle.decidePoolAudit(
+                    shanhai$poolAuditGate, others, System.currentTimeMillis());
+            if (v.level != ShanhaiLogThrottle.Level.NONE) {
+                // 🔴 用户 2026-10-01 拍板后，已知带 = 静默 ⇒ 走到这里只可能是「不在已知带内」。
+                //    （下面那个 INFO 分支特意留着：口径若翻回「形态首次打一次」，它立刻就会被走到。）
+                final String tail = "【本行已改为「同一形态只打一次」：自上次落盘以来同形重复 " + v.suppressed + " 次已静默】"
+                        + "⚠️ 差额符号的方向判据【仍待用户确认】（见 ShanhaiLogThrottle.POOL_DIFF_KNOWN_LIMIT 的注释）；"
+                        + "pos=" + getPos();
+                if (v.abnormal) {
+                    // 🔴 不在已知带内 ⇒ 当场 WARN（不许被去重吃掉）
+                    ShanhaiMod.LOGGER.warn("{} 🔴 池审计差额【超出已知带】{}：Δ总={} ／ 我这台 Σ={}（{} 次入池）"
+                                    + "／ 差额={}；已知带 = 差额 < 0 且 |差额| ≤ {}"
+                                    + "（实测 631/631 恒为负、量级 1e17~1e18；按用户口径差额 ≥ 0 也算异常）。{}",
+                            PrimordialGeneratorProduction.TAG, v.shape, deltaTotal, shanhai$auditMine,
+                            shanhai$auditDeposits, others, ShanhaiLogThrottle.POOL_DIFF_KNOWN_LIMIT, tail);
+                } else {
+                    ShanhaiMod.LOGGER.info("{} 池审计（最近 20 tick）：Δ总={} ／ 我这台 Σ={}（{} 次入池）／ 差额={}{}",
+                            PrimordialGeneratorProduction.TAG, deltaTotal, shanhai$auditMine,
+                            shanhai$auditDeposits, others, tail);
+                }
+            }
         }
         shanhai$auditLastPool = poolNow;
         shanhai$auditMine = BigInteger.ZERO;
@@ -1462,7 +1834,15 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
     }
 
     /**
-     * 入池探针（**并排格式**：探针算的 ／ 实际传的 ／ 池读数差），值变了就打，否则每 5 秒打一行。
+     * 🔴 <b>入池并排探针那一行的闸门（2026-10-01 用户点单「日志的问题」）。</b>
+     *
+     * <p>实测本行打了 <b>128 次</b>，而 128/128 全部是 {@code Δ==Y ? true；接受=true}
+     * ⇒ 改后 <b>0 行</b>（入池落账 = 正常）。只有「Δ != Y」或「接受 = false」才当场 WARN。
+     */
+    private final ShanhaiLogThrottle.Gate shanhai$depositGate = new ShanhaiLogThrottle.Gate();
+
+    /**
+     * 入池探针（**并排格式**：探针算的 ／ 实际传的 ／ 池读数差）。
      *
      * <p>三个数的含义（缺一不可，否则又会得出"探针与实现不一致"的假结论）：
      * <ul>
@@ -1473,33 +1853,37 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
      * </ul>
      * ⚠️ {@code X} 与 {@code Y} 在本实现里是同一个变量（本来就是同一个数），
      * 真正独立的**只有 Δ** ⇒ 用户/队长要判"守恒不守恒"，看的是 {@code Δ == Y}。
+     *
+     * <h2>🔴 2026-10-01 改了什么（用户点单「日志的问题」）</h2>
+     * <pre>
+     *   原来：值变了就逐 tick 打，否则每 100 tick 打一行（实测 128 行）
+     *   现在：Δ==Y 且 接受=true（= 入池落账，正常）⇒ **一行都不打**，只累计计数器；
+     *         其余 ⇒ **当场 WARN**（含此前的静默次数），同形每 5 秒最多复述一次。
+     * </pre>
      */
     private void shanhai$logGeneration(@NotNull UUID uuid, long baseEut, long parallel, int gateBonus,
                                        @NotNull BigInteger production, @NotNull BigInteger before,
                                        @NotNull BigInteger after, boolean accepted,
                                        long realParallels, long batchSize) {
-        final boolean changed = shanhai$lastLoggedProduction == null
-                || !shanhai$lastLoggedProduction.equals(production);
-        if (!changed && getOffsetTimer() % 100L != 0L) {
+        final BigInteger delta = after.subtract(before);
+        final boolean aboveLongMax = production.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0;
+        // 🔴 判定本体在 ShanhaiLogThrottle（纯 JDK；离线可单跑自检）。
+        final ShanhaiLogThrottle.Verdict v = ShanhaiLogThrottle.decideDeposit(
+                shanhai$depositGate, delta.equals(production), accepted, aboveLongMax, System.currentTimeMillis());
+        if (v.level == ShanhaiLogThrottle.Level.NONE) {
             return;
         }
-        shanhai$lastLoggedProduction = production;
-        final BigInteger delta = after.subtract(before);
-        // 🔴 p_raw / batchSize / p_eff 三个并排打出来 ⇒ 这一行自己就证明了「除之前 / 除之后」的口径，
-        //    部署后看批处理下 p_eff 是否回到 64 即可（p_raw=6400 ÷ batchSize=100 = p_eff=64）。
-        //    ⚠️ 2026-09-25 用户定案后：尾部那一档不再写「× N3倍率」——发电改为「÷ 耗能系数」
-        //       （系数 0.05 ⇒ ×20）。这里打印的就是 perTick 真正除的那个数（同一个 helper），
-        //       不是另抄一份说明文字。
-        //    打印频率未变（只在值变化时逐 tick，或每 100 tick 一行 —— 批处理下值恒定 ⇒ 5 秒一行）。
-        ShanhaiMod.LOGGER.info("{} 入池并排：X=探针算的 {}（基础EUt={} × p_raw={} ÷ batchSize={} = p_eff={}"
-                        + " ÷ 耗能系数{} = ×{}）／ Y=实际传的 {}"
-                        + "（撞 Long.MAX 顶={}）／ 池 {} → {}（Δ={}；Δ==Y ? {}；接受={}）；归属={} pos={}",
+        final boolean hitLongMaxTop = aboveLongMax;
+        ShanhaiMod.LOGGER.warn("{} 🔴 入池并排【未落账】：X=探针算的 {}（基础EUt={} × p_raw={} ÷ batchSize={}"
+                        + " = p_eff={} ÷ 耗能系数{} = ×{}）／ Y=实际传的 {}（撞 Long.MAX 顶={}）"
+                        + "／ 池 {} → {}（Δ={}；Δ==Y ? {}；接受={}）；归属={} pos={}。"
+                        + "自上次落盘以来同形重复 {} 次已静默。",
                 PrimordialGeneratorProduction.TAG, production, baseEut, realParallels, batchSize, parallel,
                 PrimordialGeneratorProduction.generationDivisor(gateBonus),
                 String.format(java.util.Locale.ROOT, "%.2f",
                         PrimordialGeneratorProduction.generationGain(gateBonus)), production,
-                production.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0, before, after, delta,
-                delta.equals(production), accepted, uuid, getPos());
+                hitLongMaxTop, before, after, delta, delta.equals(production), accepted, uuid, getPos(),
+                v.suppressed);
     }
 
     // ═════════════════════════════ 3. 工作门控（规格 §3.3 MUST） ═════════════════════════════
@@ -1945,7 +2329,9 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
         if (moduleId == null) {
             textList.add(Component.literal("已安装模块: §7（空槽）"));
         } else {
-            textList.add(Component.literal("已安装模块: §b" + displayNameOfMatterModule() + "§7 (Lv." + level + ")"));
+            textList.add(Component.literal("已安装模块: §b"
+                    + ShanhaiTextParser.stripStyleCode(displayNameOfMatterModule())
+                    + "§7 (Lv." + level + ")"));
         }
         addSharedEffectDisplayText(textList);
         // ───── 2026-09-25（任务 A）：并行 / 跨配方线程两行（24 台统一由基类出，子类只覆写取值） ─────
@@ -2324,9 +2710,31 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
         return true;
     }
 
-    /** 当前并行上限（供显示与配方修饰器使用）。 */
+    /**
+     * <b>当前并行上限（供显示与配方修饰器使用）—— 玩家覆盖生效之后的那个数。</b>
+     *
+     * <h2>🔴 这里是"玩家可调并行"唯一的插入点（2026-09-27 用户实机提出）</h2>
+     * 引擎真正读的就是本方法，而且<b>两个读点都经过它</b>（逐条核实过的调用点）：
+     * <pre>
+     *   ① 引擎路径：{@code PrimordialModuleRecipeLogic#calculateParallels()}
+     *        → {@code PrimordialModuleMachine.totalParallelLimitFor(module.getCurrentParallel(), threads)}
+     *        → 每轮 {@code calculateParallels()} 都重读一次 ⇒ 改完【立刻生效】，不用重启也不用重摆；
+     *   ② 原生修饰链：{@code ModuleRegistry} 的 {@code applyParallel(modified, module,
+     *        module.getRecipeLogicMaxParallel())}（{@link #getRecipeLogicMaxParallel()} 也走本方法）。
+     * </pre>
+     * 显示侧同样全部经由本方法（{@link #getDisplayParallel()} → GUI 的「并行上限」行、Jade 的
+     * {@link #getJadeParallel()}），⇒ 不可能出现"界面显示改了、引擎没改"的静默分叉
+     * （本工程红线：活的界面上不许放假数据）。
+     *
+     * <p>⚠️ {@code parallelOverride} 一旦生效，{@link #getAutoParallel()} 仍然每 3 tick 跟着物质模块走
+     * —— 玩家把覆盖清回 0 时立刻回到当前自动值，不需要重扫。
+     */
     public long getCurrentParallel() {
-        return currentParallel;
+        // 🔴 2026-09-27：改成委托 getEffectiveParallel()（唯一一份覆盖/天花板逻辑）。
+        //    逐值对照：钳位写入口生效后，override ≤ 天花板 ⇒ 两版同值；
+        //    唯一不同的档是"天花板事后变小"（玩家拆掉物质模块）—— 那时本版会跟着降到真实可达值，
+        //    旧版会继续返回那个已经达不到的覆盖值（假数据）。见 getEffectiveParallel() 的说明。
+        return getEffectiveParallel();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════════════
@@ -2365,6 +2773,14 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
      * </ul>
      */
     public long getRecipeLogicMaxParallel() {
+        // ⛔⛔ 2026-09-30 警示：本方法【刻意不含】跨配方线程 —— 不要在这里乘
+        //   getCrossRecipeThreads()。两条理由（都是会静默出错的那一类）：
+        //   ① 它同时被 getMaxParallel()（int 饱和桥）读，而引擎父类的预算表达式是
+        //      `(long) getMaxParallel() * getMultipleThreads()` ⇒ 在这里乘一次、父类再乘一次
+        //      = 【线程数的平方】；
+        //   ② "并行上限 × 线程数"这件事有且只有一个表达式：ShanhaiParallelBudget.totalParallelLimitFor，
+        //      需要它的两个调用点（引擎路径 PrimordialModuleRecipeLogic#calculateParallels、
+        //      原生链 ModuleRegistry#applyModuleRecipeModifier）都显式调它。
         return recipeLogicMaxParallelFor(getCurrentParallel());
     }
 
@@ -2377,7 +2793,10 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
      * {@code if (remain <= 0L) break;} 立刻跳出 ⇒ 机器【不动、不崩、日志无输出】。
      */
     public static long recipeLogicMaxParallelFor(long currentParallel) {
-        return Math.max(1L, currentParallel);
+        // 🔴 2026-09-30：算术本体搬到纯核 ShanhaiParallelBudget（只 import java.*）—— 理由与
+        //   ShanhaiFairAllocation 那一次相同：纯核可以单独 javac 驱动做【正常/预期失败/复原】三段自证，
+        //   也能在无头专服加载期真跑。这里只剩一行委托，【数值与分支一个字都没改】。
+        return ShanhaiParallelBudget.recipeLogicMaxParallelFor(currentParallel);
     }
 
     /**
@@ -2390,13 +2809,10 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
      * 否则溢出时返回 {@code Long.MAX_VALUE}（"无限"，正是老山海对最高档的表达）。
      */
     public static long saturatedMultiply(long a, long b) {
-        if (a <= 0L || b <= 0L) {
-            return 0L;
-        }
-        if (a > Long.MAX_VALUE / b) {
-            return Long.MAX_VALUE;
-        }
-        return a * b;
+        // 🔴 2026-09-30：算术本体搬到纯核 ShanhaiParallelBudget（见那里的类注释与自检）。
+        //   本方法保留原名原签名 ⇒ 主机侧（PrimordialEngineRecipeLogic）等既有调用点一个字都不用改，
+        //   全工程仍然只有【一份】实现。
+        return ShanhaiParallelBudget.saturatedMultiply(a, b);
     }
 
     /**
@@ -2423,7 +2839,9 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
      * —— 后者的第一个因子是 int，正是被压平的那一处。
      */
     public static long totalParallelLimitFor(long currentParallel, int threads) {
-        return saturatedMultiply(recipeLogicMaxParallelFor(currentParallel), Math.max(1, threads));
+        // 🔴 2026-09-30：同上，委托纯核。本方法现在是【引擎路径与原生链共用】的那一个表达式 ——
+        //   两处口径相同是本轮修复的目的本身（见 ShanhaiParallelBudget 的类注释）。
+        return ShanhaiParallelBudget.totalParallelLimitFor(currentParallel, threads);
     }
 
     /**
@@ -2587,12 +3005,49 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
      *       {@link #CROSS_RECIPE_THREADS}，三处显示（物品 tooltip / 机器 GUI / Jade）
      *       将来都从这里取 ⇒ 换来源时不会出现"显示变了、运算没变"的漂移。</li>
      * </ul>
-     * ⚠️ <b>诚实边界（别把它读成"功能已生效"）</b>：本阶段该值<b>不参与任何运算</b>；
+     * ⛔⛔ <b>【2026-09-28 作废，原文逐字留档】上面那段"诚实边界"当时为真、现在是错的。</b>
+     * <pre>
+     * ⚠️ 诚实边界（别把它读成"功能已生效"）：本阶段该值【不参与任何运算】；
      * 让线程数真正作用到配方并行上的那一半是引擎侧的事，与本次改动分开交付。
-     * "打好基础"指的是<b>接缝就位</b>，不是"功能现在生效"。
+     * "打好基础"指的是【接缝就位】，不是"功能现在生效"。
+     * </pre>
+     * <b>作废原因（用户 2026-09-28 点单）</b>：世线残片已定下来，本轮把线程真正接上 ——
+     * <ul>
+     *   <li><b>取值</b>：{@link ShanhaiConcurrencyTables#finalThreads(int, int)} =
+     *       {@code 1 + 2^N × 该格数量}（空槽 / 非残片 ⇒ 1）；</li>
+     *   <li><b>消费</b>：{@code PrimordialModuleRecipeLogic#getMultipleThreads()} 覆写后直接返回本值
+     *       ⇒ 引擎的"候选配方上限"与"并行预算倍数"都跟着变（不再是常量 1）。</li>
+     * </ul>
+     * 旧的三处显示（物品 tooltip / 机器 GUI / Jade）<b>取值点一个都不用改</b> ——
+     * 它们本来就都从这里取，这正是当初把接缝做在这里的目的。
      */
     public int getCrossRecipeThreads() {
-        return CROSS_RECIPE_THREADS;
+        return ShanhaiConcurrencyTables.finalThreads(
+                ShanhaiConcurrencyTables.threadsForShardId(shardIdOfThreadBoostSlot()),
+                threadBoostSlot.storage.getStackInSlot(0).getCount());
+    }
+
+    /**
+     * 线程槽里物品的注册 id；空槽 / 取不到 ⇒ {@code null}。<b>只读，不改槽。</b>
+     *
+     * <p>与 {@link #getMatterModuleId()} 同形：非残片<b>不</b>返回 null，而是原样返回 id ——
+     * "是不是残片"由 {@link ShanhaiConcurrencyTables#threadsForShardId(String)} 判（非残片 = 0），
+     * 两件事分开，免得将来有人把"识别"与"取值"揉在一起。
+     */
+    @Nullable
+    public String shardIdOfThreadBoostSlot() {
+        return itemId(threadBoostSlot.storage.getStackInSlot(0));
+    }
+
+    /**
+     * 线程槽当前提供的<b>额外</b>跨配方并行（线程）= {@code 2^N × 该格数量}；
+     * 空槽 / 非残片 / 数量 0 ⇒ <b>0</b>。
+     *
+     * <p>{@code getCrossRecipeThreads()} 恒等于
+     * {@code ShanhaiConcurrencyTables.BASE_CROSS_RECIPE_THREADS（= 1） + 本方法}。
+     */
+    public int getExtraCrossRecipeThreads() {
+        return getCrossRecipeThreads() - ShanhaiConcurrencyTables.BASE_CROSS_RECIPE_THREADS;
     }
 
     /** 子类追加自己的显示行（物质模块等级等）。 */
@@ -2645,7 +3100,62 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
         return stack.getHoverName().getString();
     }
 
-    /** 线程倍率槽中的堆叠（阶段 1 只做展示，不参与计算）。 */
+    // ═════════════════════════════ 5.x 🆕 恒星热力槽 · 只读视图（2026-09-30） ═════════════════════════════
+
+    /** 恒星热力槽里的堆叠（空槽 ⇒ {@code ItemStack.EMPTY}）。 */
+    @NotNull
+    public ItemStack getHeatSlotStack() {
+        return heatSlot.storage.getStackInSlot(0);
+    }
+
+    /** 恒星热力槽里的数量；空槽 0。 */
+    public int getHeatSlotCount() {
+        return heatSlot.storage.getStackInSlot(0).getCount();
+    }
+
+    /**
+     * 「槽里那件东西提供什么」的缓存。
+     *
+     * <p>🔴 为什么必须缓存：{@link ShanhaiHeatSources#of} 要查两次注册表
+     * （{@code ForgeRegistries.BLOCKS.getKey}），而它会被 {@code checkRecipe} **逐条候选配方**调用
+     * —— 一台模块的候选集可以到 40 条以上，每条都查两次注册表是纯浪费。
+     * <p>失效判据用<b>物品 + NBT + 数量</b>三者一起比：{@code ItemStack.matches(a,b)} 是
+     * {@code isSameItemSameTags}（<b>不看数量</b>）⇒ 只比它会在"64 个变 63 个"时读到旧值，
+     * 而数量恰恰是"生效没生效"的判据本身。
+     */
+    @Nullable
+    private ItemStack shanhai$heatCacheStack;
+
+    /** 上一行那个堆对应的来源。 */
+    @NotNull
+    private ShanhaiHeatSources.Source shanhai$heatCacheSource = ShanhaiHeatSources.Source.NONE;
+
+    /** 槽里那件东西提供什么（线圈炉温 / 容器等级）。纯读、带缓存。 */
+    @NotNull
+    public ShanhaiHeatSources.Source getHeatSlotSource() {
+        final ItemStack now = getHeatSlotStack();
+        final ItemStack cached = shanhai$heatCacheStack;
+        if (cached != null
+                && ItemStack.isSameItemSameTags(cached, now)
+                && cached.getCount() == now.getCount()) {
+            return shanhai$heatCacheSource;
+        }
+        final ShanhaiHeatSources.Source computed = ShanhaiHeatSources.of(now);
+        shanhai$heatCacheStack = now.copy();
+        shanhai$heatCacheSource = computed;
+        return computed;
+    }
+
+    /** 热力槽是否<b>已生效</b>（放满 {@value ShanhaiHeatGate#REQUIRED_COUNT} 个，且是线圈或容器）。 */
+    public boolean isHeatSlotActive() {
+        return getHeatSlotCount() >= ShanhaiHeatGate.REQUIRED_COUNT && !getHeatSlotSource().isEmpty();
+    }
+
+    /**
+     * 线程槽中的堆叠（<b>2026-09-28 起参与计算</b> —— 见 {@link #getCrossRecipeThreads()}）。
+     *
+     * <p>⛔ 旧注释（作废，逐字留档）：「线程倍率槽中的堆叠（阶段 1 只做展示，不参与计算）」。
+     */
     @NotNull
     public ItemStack getThreadBoostStack() {
         return threadBoostSlot.storage.getStackInSlot(0);
