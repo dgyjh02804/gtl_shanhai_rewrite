@@ -41,6 +41,7 @@ import com.shanhai.common.heat.ShanhaiHeatSources;
 import com.shanhai.common.log.ShanhaiLogThrottle;
 import com.shanhai.common.machine.ParallelOverrideConfigurator;
 import com.shanhai.common.machine.ParallelOverrideMachine;
+import com.shanhai.common.machine.ParallelPowerBudget;
 import com.shanhai.common.machine.PrimordialOmegaEngineMachine;
 import com.shanhai.common.recipe.PrimordialRecipeEffects;
 import com.shanhai.common.thread.ShanhaiBatchPlan;
@@ -371,25 +372,262 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
         return currentParallel;
     }
 
+    // ⛔⛔ 【2026-10-02 第二轮：本覆写已删除，原文逐字留档】getEffectiveParallel()
+    //   ⛔ 旧原文（作废）：
+    //       /**
+    //        * 覆盖生效之后的并行。
+    //        *
+    //        * <p>⚠️ 与 {@link #getCurrentParallel()} 必须同源同值 —— 后者才是引擎读的那个数（见该方法）。
+    //        *
+    //        * <p>🔴 2026-09-27：多了一道 {@code min(…, 天花板)}。
+    //        * 写入时已经钳过（{@link #setParallelOverride}），这里再钳一次是为了兜住
+    //        * <b>"天花板事后变小"</b> 这一档：{@code currentParallel} 每 3 tick 跟着物质模块重算，
+    //        * 玩家拆掉物质模块后自动值会掉下来，而覆盖值<b>是存下来的数、不会自己跟着变</b>
+    //        * ⇒ 没有这一句就会出现「输入框写着 4096，机器能达到的只有 64」这种只在本工程红线里
+    //        * 被点名的假数据。钳在这里 ⇒ 显示与生效同时收敛到真实可达值。
+    //        */
+    //       @Override
+    //       public long getEffectiveParallel() {
+    //           final long auto = Math.max(1L, currentParallel);
+    //           if (parallelOverride > ParallelOverrideMachine.PARALLEL_AUTO) {
+    //               return applyEnergyCap(Math.min(parallelOverride, auto));
+    //           }
+    //           return applyEnergyCap(auto);
+    //       }
+    //   ⛔ 作废原因：本方法与主机侧 {@code PrimordialOmegaEngineMachine#getEffectiveParallel()} 是
+    //      **逐字相同的同一段逻辑**（{@code auto} 两边都由 {@link #getAutoParallel()} 提供，
+    //      本类里它返回的就是 {@code currentParallel}）⇒ 两份实现在本工程是最忌讳的漂移源。
+    //      🔴 现由 {@link ParallelOverrideMachine#getEffectiveParallel()}（接口 default，全工程唯一一份）
+    //      承担，本类不再覆写。<b>数值逐位不变</b>（判据 A/C 段逐档对过账）。
+    //      ⚠️ 「天花板事后变小」这条不变式逐字保留在接口那份里（{@code min(覆盖值, auto)}）。
+    //      ⚠️ 同一轮里 {@code getEffectiveParallel()} 的语义还多了一条用户裁决：
+    //      **「电力自动」开着时，输入框里的值完全不参与**（落点
+    //      {@link ParallelOverrideMachine#getEffectiveOverride()}）—— 那一句是行为变更，不是重构。
+
+    // ═════════════════════ 🔴 电力自动（2026-10-02 新增 · 用户定方案） ═════════════════════
+
     /**
-     * 覆盖生效之后的并行。
+     * 🔴 <b>「电力自动」开关。</b>
      *
-     * <p>⚠️ 与 {@link #getCurrentParallel()} 必须同源同值 —— 后者才是引擎读的那个数（见该方法）。
+     * <h2>⛔ 2026-10-02 第二轮改判：默认 {@code false} ⇒ **默认 {@code true}**（用户点名）</h2>
+     * 用户原话（逐字）：
+     * <blockquote>「还有我的额外要求：<b>放置机器时默认开启这个电力自动并行</b>，
+     * 并且开启这个电力自动并行之后自动禁用上面的输入框和一键最大按钮」</blockquote>
+     * ⛔ 旧值 {@code false} 的理由（原文留档，别再当成"可以改回去"的依据）：
+     * 「默认 false ⇒ 关着 ⇒ 本功能对老存档<b>一个 bit 都不改</b>（用户点名的一条纪律：
+     * 不许改「输入 0 = 自动」的旧语义）」。
+     * <p>🔴 <b>改成 true 的代价（必须让用户知情）</b>：
+     * <ul>
+     *   <li><b>本功能之前就存在的机器</b>（存档里没有这个键）⇒ 读档时按字段默认值 <b>true</b> 生效
+     *       ⇒ <b>它们一读档就变成"电力自动开着"</b>，并行数会开始被能源仓总功率钳制。
+     *       这是本轮唯一一处<b>会改变老存档行为</b>的地方，用户已明确要求，特此留档。</li>
+     *   <li><b>本功能之后放置的机器</b> ⇒ 也是 true（= 用户要的「放置时默认开启」）。</li>
+     *   <li>⚠️ 已经落过盘的机器（键存在且为 0）⇒ 保持 false，面板上会显示「电力自动 ✘ 关」，
+     *       玩家点一下即可打开。这一档<b>没有</b>被静默改动。</li>
+     * </ul>
      *
-     * <p>🔴 2026-09-27：多了一道 {@code min(…, 天花板)}。
-     * 写入时已经钳过（{@link #setParallelOverride}），这里再钳一次是为了兜住
-     * <b>"天花板事后变小"</b> 这一档：{@code currentParallel} 每 3 tick 跟着物质模块重算，
-     * 玩家拆掉物质模块后自动值会掉下来，而覆盖值<b>是存下来的数、不会自己跟着变</b>
-     * ⇒ 没有这一句就会出现「输入框写着 4096，机器能达到的只有 64」这种只在本工程红线里
-     * 被点名的假数据。钳在这里 ⇒ 显示与生效同时收敛到真实可达值。
+     * <p>{@code @Persisted} 让拆装 / 重载后保持（与 {@link #parallelOverride} 同一对注解、同一条理由）；
+     * {@code @DescSynced} 让客户端面板上的开关状态与读数不会说谎。
+     */
+    @Persisted
+    @DescSynced
+    private boolean powerAutoParallel = true;
+
+    /**
+     * <b>本轮算出来的电力上限</b>（{@code 0} = 没有 / 尚未算过）。
+     *
+     * <p>🔴 <b>不 {@code @Persisted}</b>：它是"由当前仓 + 当前配方现算出来的"，落盘没有意义，
+     * 而且重载后留一个上一次的数正是本工程红线点名的"假数据"形态（拆了仓却还显示旧上限）。
+     * 写者只有配方逻辑，每轮配方开始写一次。
+     */
+    @DescSynced
+    private long energyParallel = ParallelOverrideMachine.ENERGY_CAP_NONE;
+
+    /**
+     * 🔴 <b>2026-10-02 第二轮新增：这个"没有上限"到底是哪一种"没有"。</b>
+     *
+     * <p>面板据此把那句没有信息量的「尚未算出」换成一句<b>能读的实话</b>
+     * （逐档文案见 {@link ParallelOverrideMachine#energyCapReasonText}）。
+     * 与 {@code energyParallel} 一样<b>不 {@code @Persisted}</b>：它是现算值。
+     *
+     * <p>⚠️ 初值 = {@code NOT_EVALUATED}（"还没跑过一轮配方逻辑"）而不是 {@code COMPUTED} ——
+     * 客户端镜像拿到的也是这一档，所以<b>面板永远不会在拿到数之前先编一个状态出来</b>。
+     */
+    @DescSynced
+    private int energyCapState = ParallelOverrideMachine.EnergyCapState.NOT_EVALUATED.ordinal();
+
+    /**
+     * 🔴🔴 <b>2026-10-02 第八轮新增：本轮的「每并行耗电 k」（毫 EU/t）—— 面板那一行读的就是它。</b>
+     *
+     * <p>用户裁决 ② 的原话：<b>「用户能看到 {@code 688.13K}，却看不到 {@code 2.1} ⇒ 所以这次只能靠反推」</b>。
+     * 这一条就是把那个一直藏在日志里的乘数搬到界面上。
+     *
+     * <p>与 {@code energyParallel} / {@code energyCapState} <b>同一条纪律</b>：
+     * <b>不 {@code @Persisted}</b>（现算值，落盘只会在重载后留下一个过期的假数字）、
+     * {@code @DescSynced} 让客户端面板说的是同一个数、<b>只经 {@code setEnergyCap} 三参版写入</b>
+     * （三样一起写 ⇒ 不可能出现"电上限是新的、k 是上一轮的"）。
+     * <p>{@code ≤ 0} = 本轮没算出（逐档原因见 {@code energyCapState}）。
+     */
+    @DescSynced
+    private long perParallelMilliCost = ParallelOverrideMachine.ENERGY_CAP_NONE;
+
+    @Override
+    public boolean isPowerAutoParallel() {
+        return powerAutoParallel;
+    }
+
+    @Override
+    public void setPowerAutoParallel(boolean value) {
+        if (value == powerAutoParallel) {
+            return;
+        }
+        powerAutoParallel = value;
+        // 一改开关就清掉旧上限、旧状态与旧 k：否则面板会继续显示上一轮那个数/那句话
+        //（活的界面上不许放假数据）。清成 NOT_EVALUATED = 「开关刚动过，还没重算」。
+        energyParallel = ParallelOverrideMachine.ENERGY_CAP_NONE;
+        energyCapState = ParallelOverrideMachine.EnergyCapState.NOT_EVALUATED.ordinal();
+        perParallelMilliCost = ParallelOverrideMachine.ENERGY_CAP_NONE;
+        notifyBlockUpdate();
+    }
+
+    @Override
+    public long getEnergyParallel() {
+        return energyParallel;
+    }
+
+    @Override
+    public long getPerParallelMilliCost() {
+        // 🔴 豁免的那台发电机与 energyParallel 同一处拦法：它压根不参与电力钳制，
+        //    「每并行耗电」对它没有意义 ⇒ 恒返回"没算出"，面板那一行印「不适用」。
+        //    （理由与 getEnergyCapState() 那段逐字相同：活的界面上不许放假数据。）
+        if (isEnergyCapExempt()) {
+            return ParallelOverrideMachine.ENERGY_CAP_NONE;
+        }
+        return perParallelMilliCost;
+    }
+
+    /**
+     * 🔴🔴 <b>模块侧的跨配方线程数 T —— 供接口层把电上限「÷T」（2026-10-02 第五轮用户裁决 ①）。</b>
+     *
+     * <pre>
+     *   T = {@link #getCrossRecipeThreads()} = 1 + 2^N × 线程槽数量    （空槽 / 非残片 ⇒ 1）
+     * </pre>
+     *
+     * <h2>🔴 为什么这里直接返回机器自己的值，而不是另存一份</h2>
+     * 因为<b>引擎当轮真正用的那个 T 就是本方法</b>：
+     * {@code PrimordialModuleRecipeLogic#getMultipleThreads()} 覆写后直接
+     * {@code return getMachine().getCrossRecipeThreads();} ⇒ 两处<b>同一个来源</b>，
+     * 不可能出现"接口层按 T₁ 除、父类按 T₂ 乘"（那会让预算 &gt; 电上限 ⇒ 超功率）。
+     *
+     * <h2>⚠️ 为什么不用方案乙（机器存一个 T 字段、配方逻辑写进去）</h2>
+     * 存字段会出现<b>过期窗口</b>：玩家换线程槽里的世线残片之后、配方逻辑重跑之前，
+     * 字段还是旧 T，而父类读的 {@code getMultipleThreads()} 已经是新 T ⇒
+     * 预算 = {@code min(本机上限, 电上限÷T_旧) × T_新}，T_新 &gt; T_旧 时<b>超电上限 ⇒ 超功率</b>。
+     * 本实现两处同源同刻 ⇒ 预算 {@code ≤ 电上限} 对<b>任意</b> T 都成立。
      */
     @Override
-    public long getEffectiveParallel() {
-        final long auto = Math.max(1L, currentParallel);
-        if (parallelOverride > ParallelOverrideMachine.PARALLEL_AUTO) {
-            return Math.min(parallelOverride, auto);
+    public int getEnergyCapThreads() {
+        return getCrossRecipeThreads();
+    }
+
+    /**
+     * 🔴🔴 <b>2026-10-02 第六轮（用户裁决 ①「那台发电机 ⇒ 给它单独豁免」）—— 本类里唯一一个实现点。</b>
+     *
+     * <pre>
+     *   return getDefinition() != null &amp;&amp; getDefinition().isGenerator();
+     * </pre>
+     * 全 24 台原初模块里只有<b>一台</b>为真：那台发电机（「原始真空零点能发生器」）。
+     * 判据不是新造的 —— 它与 {@code PrimordialModuleRecipeLogic#shanhai$resolveRouting()}
+     * 用的是<b>同一个</b> {@code getDefinition().isGenerator()}：
+     * <pre>
+     *   shanhai$resolveRouting():  final boolean generator = getMachine().getDefinition().isGenerator();
+     *                              if (generator) { setUseMultipleRecipes(false); ... }   ← 退回原生链
+     * </pre>
+     * ⇒ 「走原生链的那台」与「被豁免的那台」在结构上【是同一次判定】（同一个方法、同一个时刻之外
+     * 永不改变的定义标志），不存在"两台各判一遍、迟早分叉"的窗口。
+     *
+     * <h2>🔴 机制 = 「电上限视为 ∞」（不是"不写电上限"）—— 理由逐条</h2>
+     * <ol>
+     *   <li><b>为什么不是"不写"</b>：那要靠"上游永远别写进来"来维持 —— 一旦将来任何一条路径
+     *       写进一个数（例如这台机器某时刻又走了引擎路径、或有人加了个新写入口），豁免就
+     *       <b>静默失效</b>：机器照常运转、只是并行从 259845521287 掉下去，日志里<b>一个字都没有</b>。
+     *       本工程吃过"靠一个没人验证的推断维持正确性"的亏（用户本轮原话就是这个意思：
+     *       「不管'它电上限是否恒为 0'那个推断对不对」）。</li>
+     *   <li><b>"视为 ∞"落在哪</b>：{@link ParallelOverrideMachine#applyEnergyCap(long, int)} 的
+     *       第一句 —— 那是全工程<b>唯一</b>一处"把电上限施加到并行上"的算术
+     *       （{@code getEffectiveParallel()} 也调它）⇒ 写入口怎么变都绕不过去。</li>
+     *   <li><b>"∞"不是修辞</b>：本工程里"不钳"的既有表示就是电上限 ≤
+     *       {@link ParallelOverrideMachine#ENERGY_CAP_NONE}（没有上限 / 没算出 / 没能源仓），
+     *       所以「电上限 = ∞」与「不参与钳制」是同一件事的两种说法。</li>
+     * </ol>
+     *
+     * <h2>🔴 它保的是什么（2026-09-30 已验收修复）</h2>
+     * 用户当时报「零点能反应堆不吃跨配方并行，那个发电量都没加」；修法就是
+     * {@code ModuleRegistry} 那行 {@code totalParallelLimitFor(getCurrentParallel(), T)}
+     * （= <b>本机上限 × T</b>）⇒ 永恒物质模块表值 2147483647 × 121 线程 = <b>259845521287</b>。
+     * <p>⚠️ 现在这条修复是<b>可被打破的</b>：{@code powerAutoParallel} 自第五轮起<b>默认 true</b>，
+     * 只要有一个非 0 的电上限落进来，本类的接口层就会给出
+     * {@code floor(电上限 ÷ 121)} —— 电上限 48 时算出 0，按既有纪律保底 1
+     * ⇒ 原生链拿到 {@code 1 × 121 = 121}（<b>从 259845521287 掉到 121</b>）。
+     * 豁免把这条路径整个掐掉。
+     *
+     * <p>⚠️ 另外 23 台模块与主机（{@code PrimordialOmegaEngineMachine}）都<b>不</b>覆写本方法
+     * ⇒ 拿到接口默认的 {@code false} ⇒ 它们的电力钳制行为一个字节都没变。
+     */
+    @Override
+    public boolean isEnergyCapExempt() {
+        // getDefinition() 在构造期理论上可能还是 null（本方法若被 getEffectiveParallel() 在
+        // 早期调用）⇒ 显式兜底成 false（= 不豁免、维持老行为），绝不在这种时候抛 NPE。
+        return getDefinition() != null && getDefinition().isGenerator();
+    }
+
+    @Override
+    public ParallelOverrideMachine.EnergyCapState getEnergyCapState() {
+        // 🔴 2026-10-02 第六轮：豁免的那台发电机【只报 ∞】—— 不报任何数字。
+        //    为什么必须在这里拦：本机若真有值被写进 energyParallel（一旦发生）、而面板照旧把它
+        //    显示成「电上限 48（按本轮候选配方算出来的）」，那就是一块【活的界面上的假数据】
+        //    （那个 48 根本没有参与任何运算，见 isEnergyCapExempt() 的注释）。
+        //    ⇒ 面板与工具提示读的都是本方法 ⇒ 一处拦下、全线一致。
+        //    ⚠️ 它读的是 machine definition 上的常量标志（客户端/服务端恒同值）⇒ 显示不会分叉。
+        if (isEnergyCapExempt()) {
+            return ParallelOverrideMachine.EnergyCapState.UNLIMITED_BY_EXEMPTION;
         }
-        return auto;
+        return ParallelOverrideMachine.EnergyCapState.values()[energyCapState];
+    }
+
+    /**
+     * 🔴 状态、数值与「每并行耗电 k」的唯一写入口（一次写三样）—— 理由见契约方法自己的注释。
+     *
+     * <p>三样里<b>任一样</b>变了就要刷包；全没变<b>直接返回</b>（与既有几个 setter 同一条纪律）。
+     */
+    @Override
+    public void setEnergyCap(ParallelOverrideMachine.EnergyCapState state, long value,
+                             long perParallelMilliCost) {
+        final ParallelOverrideMachine.EnergyCapState nextState = state == null
+                ? ParallelOverrideMachine.EnergyCapState.ERROR : state;
+        final long nextValue = value <= ParallelOverrideMachine.ENERGY_CAP_NONE
+                ? ParallelOverrideMachine.ENERGY_CAP_NONE : value;
+        final long nextCost = perParallelMilliCost <= ParallelOverrideMachine.ENERGY_CAP_NONE
+                ? ParallelOverrideMachine.ENERGY_CAP_NONE : perParallelMilliCost;
+        if (nextState.ordinal() == energyCapState && nextValue == energyParallel
+                && nextCost == this.perParallelMilliCost) {
+            return;
+        }
+        energyCapState = nextState.ordinal();
+        energyParallel = nextValue;
+        this.perParallelMilliCost = nextCost;
+        notifyBlockUpdate();
+    }
+
+    @Override
+    public void setEnergyParallel(long value) {
+        final long next = value <= ParallelOverrideMachine.ENERGY_CAP_NONE
+                ? ParallelOverrideMachine.ENERGY_CAP_NONE : value;
+        if (next == energyParallel) {
+            return;
+        }
+        energyParallel = next;
+        notifyBlockUpdate();
     }
 
     /**
@@ -434,6 +672,14 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
         //    它是本轮 bug（「零点能反应堆不吃跨配方并行」）在【无头专服里唯一跑得到】的判据：
         //    现象本身只发生在"世界上真有一台成型模块在跑"的时候，而本行是纯函数、注册期必跑。
         ShanhaiMod.LOGGER.info(ShanhaiParallelBudget.selfTest());
+        // 🔴 2026-10-02（第七轮）追加：**每并行耗电 k 的定点核**加载期自检。
+        //    用户实机报的「电力自动算出来了、但整机耗电 688.13K > 能源仓 655,360 ⇒ 电力输入不足」
+        //    真凶 = 旧的 `Math.round(42 × 0.05) = 2`（真值 2.1）⇒ 并行被算大 5%。
+        //    这一行把「k 必须带小数参与除法」变成【加载期就会炸】的断言：
+        //    正向对照（用户档 655,360 / k=2.1 ⇒ 312,076）＋ 边界紧（+1 份就超）＋
+        //    回归锚（k=42 ⇒ 48 / 3 逐位不变）＋ 负面对照（旧 round 口径必须报红）。
+        //    与上一条同理由：纯函数、注册期必跑、无头专服里就能跑、日志可 grep。
+        ShanhaiMod.LOGGER.info(ParallelPowerBudget.selfTest());
         // 🔴 2026-09-30（同日第二轮）追加：**并行进 long 档 ⇒ 配方时长下限 10 tick** 的纯算术核自检
         //    （恒等 11 档 × 7 个时长 + 边界 2 条 + 正面对照 3 条 + 负面对照 3 条）。
         //    它是用户那句「这个配方加到 long 之后可以加一个最小配方时长为 10tick」在
@@ -2726,6 +2972,16 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
      * {@link #getJadeParallel()}），⇒ 不可能出现"界面显示改了、引擎没改"的静默分叉
      * （本工程红线：活的界面上不许放假数据）。
      *
+     * <h2>🔴 2026-10-02 第五轮：本值现在【含 ÷T】（用户裁决 ① 与 ③ 自动在这里合流）</h2>
+     * <pre>
+     *   本值 = getEffectiveParallel() = applyEnergyCap(base, T)   ← T = getEnergyCapThreads()
+     *        = min(本机上限, floor(电上限 ÷ T))                     ← 【每线程】口径
+     *   · 引擎侧：getRecipeLogicMaxParallel() → getMaxParallel() → 父类再 × T ⇒ 总预算正确
+     *   · 显示侧：GUI「并行上限」行、Jade 的 parallel 键【自动跟着变】—— 它们读的就是本方法，
+     *     全工程没有任何一处另存一份数 ⇒ 用户裁决 ③「Jade 跟着改」在本工程里是
+     *     **结构性自动成立**的，不需要（也不应该）去改显示那条链的代码
+     * </pre>
+     *
      * <p>⚠️ {@code parallelOverride} 一旦生效，{@link #getAutoParallel()} 仍然每 3 tick 跟着物质模块走
      * —— 玩家把覆盖清回 0 时立刻回到当前自动值，不需要重扫。
      */
@@ -2781,6 +3037,13 @@ public abstract class PrimordialModuleMachine extends WorkableElectricMultiblock
         //   ② "并行上限 × 线程数"这件事有且只有一个表达式：ShanhaiParallelBudget.totalParallelLimitFor，
         //      需要它的两个调用点（引擎路径 PrimordialModuleRecipeLogic#calculateParallels、
         //      原生链 ModuleRegistry#applyModuleRecipeModifier）都显式调它。
+        //   🔴 2026-10-02 第五轮补充：上面那条警示【仍然成立】，但现在这里**含有 ÷T** ——
+        //      不是乘，是除，落点在 getCurrentParallel() → getEffectiveParallel() →
+        //      ParallelOverrideMachine#applyEnergyCap(base, T)，T = 本类的 getEnergyCapThreads()
+        //      （= getCrossRecipeThreads()）。它与上面那条"不要乘"不冲突：
+        //        · 乘 T 在这里 ⇒ 父类再乘一次 ⇒ T²（错）
+        //        · 除 T 在这里 ⇒ 父类乘回 T ⇒ 每线程上限 × T = 总预算（对）
+        //      这就是用户 2026-10-02 第五轮裁决 ①：「把 ÷T 落到取并行上限那一层」。
         return recipeLogicMaxParallelFor(getCurrentParallel());
     }
 

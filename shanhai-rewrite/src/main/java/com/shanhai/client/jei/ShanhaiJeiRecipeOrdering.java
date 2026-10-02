@@ -1,18 +1,23 @@
 package com.shanhai.client.jei;
 
 import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
+import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.integration.jei.recipe.GTRecipeWrapper;
 import com.shanhai.ShanhaiMod;
 import com.shanhai.common.jei.RecipeIngredientOrdering;
 import com.shanhai.common.jei.RecipeIngredientOrdering.InputClass;
+import com.shanhai.common.jei.RecipeIngredientOrdering.Tier;
 
+import net.minecraft.core.NonNullList;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.AbstractCookingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 
 import java.util.EnumSet;
@@ -28,26 +33,47 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <h2>1. 各分类的口径（**故意不一样**）</h2>
  * <pre>
- *   研磨机 gtceu:macerator ⇒ 是【锭】的排第 1 档、是【宝石】的排第 2 档，其余不动
- *   提取机 gtceu:extractor ⇒ 是【锭】的排第 1 档、是【粉】的排第 2 档，其余不动
+ *   研磨机     gtceu:macerator   ⇒ 输入含【锭】排第 1 档、含【宝石】排第 2 档，其余不动
+ *   提取机     gtceu:extractor   ⇒ 输入含【锭】排第 1 档、含【粉】排第 2 档，其余不动
+ *   原版熔炉烧炼 minecraft:furnace ⇒ 【单质粉 → 锭】排第 1 档、【原矿 → 锭】排第 2 档，其余不动
  * </pre>
  * 档位表是**数据**（{@code RecipeIngredientOrdering.TIER_TABLE}）⇒
  * 研磨机里"是粉的"**不会**被提前，提取机里"是宝石的"**也不会**被提前 ——
  * 这正是用户口径的要求（别做成一套通用规则）。
+ * <p>第三行是本轮新增：它是表里<b>第一个"要看输出"的分类</b>（{@link Tier#needsOutput()}）。
  *
- * <h2>2. 「含哪种形态」怎么问出来</h2>
- * 对一条 {@link GTRecipeWrapper}：取 {@code recipe.inputs.get(ItemRecipeCapability.CAP)}
- * → 每个 {@link Content} 的 {@code getContent()}（{@link Ingredient}（GT 的 {@code SizedIngredient} 是子类）或 {@link ItemStack}）
- * → 展开成 {@link ItemStack} → 对每个栈：
+ * <h2>2. 「含哪种形态」怎么问出来（本轮从"只问输入"扩成"输入 ＋ 输出"）</h2>
+ * <b>两条互不相干的配方族都要认</b>：
+ * <ol>
+ *   <li><b>GT 配方</b>（{@link GTRecipeWrapper}）：输入取 {@code gtRecipe.inputs.get(ItemRecipeCapability.CAP)}、
+ *       输出取 {@code gtRecipe.outputs.get(ItemRecipeCapability.CAP)}；</li>
+ *   <li>🔴 <b>原版烹饪配方</b>（{@link AbstractCookingRecipe}）—— 本版新增。
+ *       JEI 的「烧炼」分类元素类型实测就是 {@code net.minecraft.world.item.crafting.SmeltingRecipe}
+ *       （{@code javap mezz.jei.library.plugins.vanilla.cooking.FurnaceSmeltingCategory} ⇒
+ *       {@code extends AbstractCookingCategory<SmeltingRecipe>}），
+ *       <b>不是</b> {@code GTRecipeWrapper} ⇒ 第二版在这里问出来的永远是空集。</li>
+ * </ol>
+ * 原版侧的两个取值点（都在 MC 1.20.1 反编译源码里核对过）：
+ * <pre>
+ *   AbstractCookingRecipe#getIngredients()            → NonNullList&lt;Ingredient&gt;，里面只有那 1 个输入
+ *   AbstractCookingRecipe#getResultItem(RegistryAccess) → ItemStack；
+ *        🔴 反编译原文是 `return this.f_43730_;` —— **完全忽略入参** ⇒ 传 {@code RegistryAccess.EMPTY} 安全
+ * </pre>
+ *
+ * <h2>3. 每个 {@link Content}/{@link Ingredient} 展开成 {@link ItemStack} 后，两个口径取并集</h2>
  * <ul>
- *   <li>id 口径：{@code BuiltInRegistries.ITEM.getKey(item).getPath()} → {@code classifyIdPath}；</li>
- *   <li>标签口径：{@code item.builtInRegistryHolder().tags()} → {@code classifyTag}。</li>
+ *   <li>id 口径：{@code BuiltInRegistries.ITEM.getKey(item).getPath()} → {@code classifyIdPathInto}；</li>
+ *   <li>标签口径：{@code item.builtInRegistryHolder().tags()} → {@code classifyTagInto}。</li>
  * </ul>
- * 两个口径的结果**取并集**（依据见纯核的注释：`forge:gems/diamond` 的成员是 `minecraft:diamond`，
- * id 里根本没有 "gem"；而 `gtceu:ruby_gem` 有 `_gem` 但也要能靠 id 认出来）。
+ * 依据见纯核注释：{@code forge:gems/diamond} 的成员是 {@code minecraft:diamond}（id 里没有 "gem"），
+ * 而真实配方的输入写的是 <b>tag</b>（{@code forge:dusts/iron}）⇒ 两条都不能少。
  *
- * <h2>3. 一次性日志</h2>
- * 每个目标分类**每局一行** {@code [SHANHAI-JEIORDER]}：总条数、各形态命中数、
+ * <h2>4. 🔴 省一遍开销：不看输出的分类**根本不去算输出</h2>
+ * {@link #order} 先问 {@link RecipeIngredientOrdering#needsOutput(String)}；
+ * 研磨机／提取机是 {@code false} ⇒ 连 {@code outputs} 都不碰（那两个分类一个字节的额外开销都没有）。
+ *
+ * <h2>5. 一次性日志</h2>
+ * 每个目标分类**每局一行** {@code [SHANHAI-JEIORDER]}：总条数、各档命中数、
  * 重排前后各前 5 条的配方 id。三种失败靠它分开：
  * <b>没这行 = 注入没跑</b>；<b>命中数全 0 = 判据没命中</b>；<b>命中数 &gt; 0 而界面没变 = 显示的不是这份列表</b>。
  */
@@ -79,10 +105,12 @@ public final class ShanhaiJeiRecipeOrdering {
         if (recipes == null || recipes.isEmpty()) {
             return recipes;
         }
-        InputClass[] tiers = RecipeIngredientOrdering.tiersFor(recipeTypeUid);
+        Tier[] tiers = RecipeIngredientOrdering.tiersFor(recipeTypeUid);
         if (tiers == null) {
             return recipes;
         }
+        // 🔴 只有表里真有一档要看输出时，才去算输出形态（第二版的两个分类 ⇒ 这里的开销恒为 0）
+        boolean needOutput = RecipeIngredientOrdering.needsOutput(recipeTypeUid);
         IdentityHashMap<T, Integer> ranks = new IdentityHashMap<>(recipes.size() * 2);
         int[] tierHits = new int[tiers.length];
         for (int i = 0; i < recipes.size(); i++) {
@@ -90,10 +118,11 @@ public final class ShanhaiJeiRecipeOrdering {
             if (ranks.containsKey(element)) {
                 continue;
             }
-            Set<InputClass> present = classesOf(element);
-            ranks.put(element, RecipeIngredientOrdering.rank(recipeTypeUid, present));
+            Set<InputClass> inputs = inputsOf(element);
+            Set<InputClass> outputs = needOutput ? outputsOf(element) : null;
+            ranks.put(element, RecipeIngredientOrdering.rank(recipeTypeUid, inputs, outputs));
             for (int t = 0; t < tiers.length; t++) {
-                if (present.contains(tiers[t])) {
+                if (tiers[t].matches(inputs, outputs)) {
                     tierHits[t]++;
                 }
             }
@@ -106,20 +135,67 @@ public final class ShanhaiJeiRecipeOrdering {
         return ordered;
     }
 
-    /** 一条配方输入里出现的全部材料形态（并集；不是 GT 配方 ⇒ 空集 ⇒ 永远落在"其它"档）。 */
-    public static Set<InputClass> classesOf(Object recipe) {
-        if (!(recipe instanceof GTRecipeWrapper wrapper)) {
-            return EnumSet.noneOf(InputClass.class);
+    /**
+     * 一条配方<b>输入</b>里出现的全部材料形态（并集）。
+     * 既不是 GT 配方、也不是原版烹饪配方 ⇒ 空集 ⇒ 永远落在"其它"档。
+     */
+    public static Set<InputClass> inputsOf(Object recipe) {
+        if (recipe instanceof GTRecipeWrapper wrapper) {
+            GTRecipe gtRecipe = wrapper.recipe;
+            if (gtRecipe == null) {
+                return EnumSet.noneOf(InputClass.class);
+            }
+            return classesOfContents(gtRecipe.inputs);
         }
-        GTRecipe gtRecipe = wrapper.recipe;
-        if (gtRecipe == null || gtRecipe.inputs == null) {
-            return EnumSet.noneOf(InputClass.class);
+        if (recipe instanceof AbstractCookingRecipe cooking) {
+            // 原版烹饪（熔炉/烟熏/高炉/营火）：输入是那 1 个 Ingredient
+            Set<InputClass> out = EnumSet.noneOf(InputClass.class);
+            NonNullList<Ingredient> ingredients = cooking.getIngredients();
+            if (ingredients != null) {
+                for (int i = 0; i < ingredients.size(); i++) {
+                    collectClasses(ingredients.get(i), out);
+                }
+            }
+            return out;
         }
-        List<Content> contents = gtRecipe.inputs.get(ItemRecipeCapability.CAP);
-        if (contents == null || contents.isEmpty()) {
-            return EnumSet.noneOf(InputClass.class);
+        return EnumSet.noneOf(InputClass.class);
+    }
+
+    /**
+     * 一条配方<b>输出</b>里出现的全部材料形态（并集）。语义与 {@link #inputsOf} 对称。
+     *
+     * <p>只在档位表里真有"要看输出"的那一档时才会被调用（见 {@link #order}）。
+     */
+    public static Set<InputClass> outputsOf(Object recipe) {
+        if (recipe instanceof GTRecipeWrapper wrapper) {
+            GTRecipe gtRecipe = wrapper.recipe;
+            if (gtRecipe == null) {
+                return EnumSet.noneOf(InputClass.class);
+            }
+            return classesOfContents(gtRecipe.outputs);
         }
+        if (recipe instanceof AbstractCookingRecipe cooking) {
+            Set<InputClass> out = EnumSet.noneOf(InputClass.class);
+            // 反编译实测：AbstractCookingRecipe#getResultItem 忽略入参（直接 return 结果字段）
+            collectClasses(cooking.getResultItem(RegistryAccess.EMPTY), out);
+            return out;
+        }
+        return EnumSet.noneOf(InputClass.class);
+    }
+
+    /**
+     * GT 的 {@code inputs} 与 {@code outputs} 是**同一张类型**
+     * （{@code Map<RecipeCapability<?>, List<Content>>}，javap 实测）⇒ 同一段取法用两次，只是把表换一张。
+     */
+    private static Set<InputClass> classesOfContents(Map<RecipeCapability<?>, List<Content>> contentsByCapability) {
         Set<InputClass> out = EnumSet.noneOf(InputClass.class);
+        if (contentsByCapability == null) {
+            return out;
+        }
+        List<Content> contents = contentsByCapability.get(ItemRecipeCapability.CAP);
+        if (contents == null || contents.isEmpty()) {
+            return out;
+        }
         for (int i = 0; i < contents.size(); i++) {
             Content content = contents.get(i);
             if (content != null) {
@@ -145,7 +221,7 @@ public final class ShanhaiJeiRecipeOrdering {
         }
     }
 
-    /** 单个物品栈：id 口径 与 标签口径 取并集。 */
+    /** 单个物品栈：id 口径 与 标签口径 取并集（两边各自往 {@code out} 里加，不互相覆盖）。 */
     private static void collectClasses(ItemStack stack, Set<InputClass> out) {
         if (stack == null || stack.isEmpty()) {
             return;
@@ -153,23 +229,17 @@ public final class ShanhaiJeiRecipeOrdering {
         Item item = stack.getItem();
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
         if (id != null) {
-            InputClass byId = RecipeIngredientOrdering.classifyIdPath(id.getPath());
-            if (byId != null) {
-                out.add(byId);
-            }
+            RecipeIngredientOrdering.classifyIdPathInto(id.getPath(), out);
         }
         for (TagKey<Item> tag : item.builtInRegistryHolder().tags().toList()) {
             ResourceLocation tagId = tag.location();
-            InputClass byTag = RecipeIngredientOrdering.classifyTag(tagId.getNamespace(), tagId.getPath());
-            if (byTag != null) {
-                out.add(byTag);
-            }
+            RecipeIngredientOrdering.classifyTagInto(tagId.getNamespace(), tagId.getPath(), out);
         }
     }
 
     /** 每个分类每局一行：总条数 / 各档命中数 / 重排前后前 5 个配方 id。 */
     private static <T> void logOnce(String recipeTypeUid, List<T> before, List<T> after,
-                                    InputClass[] tiers, int[] tierHits) {
+                                    Tier[] tiers, int[] tierHits) {
         try {
             if (recipeTypeUid == null || LOGGED.putIfAbsent(recipeTypeUid, Boolean.TRUE) != null) {
                 return;
@@ -177,28 +247,15 @@ public final class ShanhaiJeiRecipeOrdering {
             StringBuilder hits = new StringBuilder();
             for (int i = 0; i < tiers.length; i++) {
                 if (i > 0) {
-                    hits.append("、");
+                    hits.append('、');
                 }
-                hits.append(tierName(tiers[i])).append(' ').append(tierHits[i]).append(" 条");
+                hits.append(tiers[i].label()).append(' ').append(tierHits[i]).append(" 条");
             }
             ShanhaiMod.LOGGER.info(
                     "[SHANHAI-JEIORDER] JEI 分类内排序已生效：{} 本批 {} 条配方；命中档位[{}]（档内保持原顺序）；重排前前 5 条={} ；重排后前 5 条={}",
                     recipeTypeUid, before.size(), hits, head(before), head(after));
         } catch (Throwable ignored) {
             // 日志不能成为失败点
-        }
-    }
-
-    private static String tierName(InputClass inputClass) {
-        switch (inputClass) {
-            case INGOT:
-                return "锭";
-            case GEM:
-                return "宝石";
-            case DUST:
-                return "粉";
-            default:
-                return String.valueOf(inputClass);
         }
     }
 
@@ -224,6 +281,13 @@ public final class ShanhaiJeiRecipeOrdering {
             GTRecipe gtRecipe = wrapper.recipe;
             if (gtRecipe != null && gtRecipe.id != null) {
                 return gtRecipe.id.toString();
+            }
+        }
+        if (recipe instanceof AbstractCookingRecipe cooking) {
+            // 原版烹饪：getRegistryName 由 JEI 提供，这里没有 JEI 的 category ⇒ 退回配方自身的 id
+            ResourceLocation id = cooking.getId();
+            if (id != null) {
+                return id.toString();
             }
         }
         if (recipe == null) {

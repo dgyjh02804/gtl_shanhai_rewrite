@@ -9,6 +9,9 @@ import com.gregtechceu.gtceu.api.recipe.modifier.ParallelLogic;
 import com.gtladd.gtladditions.api.machine.logic.MutableRecipesLogic;
 import com.gtladd.gtladditions.common.data.ParallelData;
 import com.shanhai.ShanhaiMod;
+import com.shanhai.common.machine.ParallelOverrideMachine;
+import com.shanhai.common.machine.ParallelPowerBudget;
+import com.shanhai.common.thread.ShanhaiParallelBudget;
 import com.shanhai.common.recipe.PrimordialRecipeEffects;
 import com.shanhai.machine.module.PrimordialModuleMachine;
 
@@ -17,9 +20,12 @@ import it.unimi.dsi.fastutil.longs.LongLongPair;
 import org.gtlcore.gtlcore.api.recipe.IParallelLogic;
 import org.gtlcore.gtlcore.api.recipe.RecipeMultiplierTracker;
 
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 青铜神锻（原始终焉引擎）主机的<b>多配方引擎</b>逻辑 —— {@code MutableRecipesLogic} 的本工程子类。
@@ -237,7 +243,15 @@ public class PrimordialEngineRecipeLogic extends MutableRecipesLogic<PrimordialO
         //      是 long×int ⇒ **不会回绕**；{@code Ints.saturatedCast} 保证"128 + 附加"本身不溢出。
         //      2^31-1 × 128 ≈ 2.75e11 < Long.MAX_VALUE ⇒ **本处不需要额外的 Math.max(0L, …)**
         //      （真正让并行数收敛的是本类的 `calculateParallel(...)` 输出空间钳制 + 输入量边界）。
-        return Ints.saturatedCast((long) BASE_THREADS + getMachine().getAdditionalThread());
+        //   🔴 2026-10-02 第五轮：本式【搬进纯核】—— 现在有两个读者必须在同一 tick 内逐位同值：
+        //      ① 本方法（父类拿它乘预算）；② PrimordialOmegaEngineMachine#getEnergyCapThreads()
+        //      （接口层拿它做「电上限 ÷ T」）。两处各写一遍 ⇒ 预算 = min(本机上限, 电上限÷T₁) × T₂，
+        //      T₂ > T₁ 时会 > 电上限 ⇒ 总耗电超 P。⇒ 唯一实现是
+        //      ShanhaiParallelBudget#crossRecipeThreadsForHost(int, int)。
+        //      数值【逐位不变】：Ints.saturatedCast(128L + x) 与纯核那支 saturatedCast 在 int 域内同值
+        //      （纯核不用 Guava 是因为它必须能被一个裸 javac 编译，见那个类的注释）。
+        return ShanhaiParallelBudget.crossRecipeThreadsForHost(
+                BASE_THREADS, getMachine().getAdditionalThread());
     }
 
     /**
@@ -281,15 +295,202 @@ public class PrimordialEngineRecipeLogic extends MutableRecipesLogic<PrimordialO
      */
     @Override
     protected @Nullable ParallelData calculateParallels() {
+        // 🔴 2026-10-02 第十轮：「本轮」= 「同一轮两次取候选是否同集合」探针的【观察窗】
+        //    （与模块侧 PrimordialModuleRecipeLogic#calculateParallels() 逐字同源）。
+        //    主机侧同样会取候选两次：① shanhai$updatePowerParallelCap() 算电上限时一次；
+        //    ② 分配并行时一次（本方法自己调的那一句 / 父类 MutableRecipesLogic#calculateParallels()
+        //      里那一句 invokevirtual lookupRecipeSet()）。
+        //    ⚠️ 主机侧的候选集【不截断】（= 该配方类型下全部可跑配方，可能几百条）⇒
+        //       "两次是不是同一个集合"在这里更值得盯：一次顺序漂移就能让 k最贵 漏掉最贵那条。
+        //    🔴 2026-10-02 第十一轮：finally 里顺便把【累计值心跳】打到日志
+        //       （首次必打、之后每 5 分钟最多一行，与模块侧共用同一个间隔计时器 ⇒ 全局
+        //       每 5 分钟最多一行，不会因为"两侧各打一行"翻倍）。
+        CandidateSetConsistency.beginRound();
+        try {
+            return shanhai$calculateParallelsInRound();
+        } finally {
+            CandidateSetConsistency.endRound(ShanhaiMod.LOGGER::info);
+        }
+    }
+
+    /** {@link #calculateParallels()} 的本体；拆出来只为让观察窗用一个 try/finally 包住全部 return 口。 */
+    private @Nullable ParallelData shanhai$calculateParallelsInRound() {
         final PrimordialOmegaEngineMachine host = getMachine();
-        final long limit = PrimordialModuleMachine.saturatedMultiply(
-                host.getRecipeLogicMaxParallel(), getMultipleThreads());
+        // 🔴 2026-10-02「电力自动」：先算并写回电力上限，再读预算 ——
+        //    host.getRecipeLogicMaxParallel() → getEffectiveParallel() → applyEnergyCap() 读的是它。
+        //    开关关着时本调用【立刻返回且一次 lookup 都不做】⇒ 与改动前同开销、同结果。
+        shanhai$updatePowerParallelCap();
+        // 🔴🔴 2026-10-02 第五轮（用户裁决 ①「改，让它真生效」）：那个 ÷T 已经【不靠这一行生效了】。
+        //    ÷T 落在【接口层】= ParallelOverrideMachine#applyEnergyCap → getMaxParallel()，
+        //    而下面那句 `limit <= Integer.MAX_VALUE ⇒ return super.calculateParallels()` 里，
+        //    父类【读的就是 getMaxParallel()】（字节码原文：checkcast ParallelMachine;
+        //    invokeinterface getMaxParallel:()I; i2l; getMultipleThreads:()i2l; lmul;
+        //    见 temp/autoparallel-fix4/javap-MutableRecipesLogic.txt）⇒
+        //    **"退回父类"不但没关系，它算出来的正是我们要的值**：
+        //       父类预算 = min(本机上限, floor(电上限÷T)) × T ≤ 电上限 = P ÷ k ⇒ 总耗电 ≤ P。
+        //    ⛔ 上一轮那句「≤ 2^31 时走 super ⇒ 那条路上"电上限 ÷ T"尚未生效，待裁」【已作废】。
+        //    ⚠️ 本行的 limit 与父类那条路【现在逐位同值】（都是 每线程上限 × T）——
+        //       改动前两者差 T 倍（本轮修掉的正是这件事）。判据断言这条恒等式。
+        final long limit = ShanhaiParallelBudget.parallelBudget(
+                host.getRecipeLogicMaxParallel(), host.getEnergyParallel(), getMultipleThreads());
         if (limit <= (long) Integer.MAX_VALUE) {
             return super.calculateParallels();
         }
         return PrimordialRecipeEffects.greedyAllocateWithLongLimit(
                 lookupRecipeSet(), limit, host,
                 (recipe, remain) -> calculateParallel(host, recipe, remain));
+    }
+
+    /**
+     * 🔴 <b>覆写只为【观测】—— 返回值逐字就是父类的返回值</b>（2026-10-02 第十轮）。
+     *
+     * <p>为什么要有这个覆写：运行期一致性探针（{@link CandidateSetConsistency}）必须看到
+     * <b>每一次</b>取候选的结果，而主机的候选集出口原本只有父类
+     * {@code MutableRecipesLogic#lookupRecipeSet()}。覆写之后，
+     * {@code shanhai$updatePowerParallelCap()} 那次调用、本类自己那次调用、以及父类
+     * {@code calculateParallels()} 内部那一句 {@code invokevirtual lookupRecipeSet()}
+     * <b>全部</b>汇到这里 —— 于是"同一轮两次取候选是不是同一个集合"才有得比。
+     *
+     * <p>⚠️ <b>与模块侧那份覆写的关键差别</b>：模块侧会<b>截断</b>（{@code ≤ threads} 条），
+     * 本类<b>一条都不动</b>（主机不截断，见 {@code shanhai$updatePowerParallelCap()} 的注释）
+     * ⇒ 这里只有"记录 + 原样返回"，没有任何"改内容"的可能。
+     * 观察窗之外（{@code isRoundActive() == false}）连字符串都不建，开销为一次布尔读。
+     */
+    @Override
+    protected @NotNull Set<GTRecipe> lookupRecipeSet() {
+        final Set<GTRecipe> all = super.lookupRecipeSet();
+        if (CandidateSetConsistency.isRoundActive()) {
+            final List<String> ids = new ArrayList<>(all.size());
+            for (GTRecipe candidate : all) {
+                ids.add(String.valueOf(candidate.id));
+            }
+            CandidateSetConsistency.observe("主机", String.valueOf(getMachine().getDefinition().getId()), ids,
+                    ShanhaiMod.LOGGER::warn);
+        }
+        return all;
+    }
+
+    // ═════════════════════ 🔴 电力自动（2026-10-02 新增 · 用户定方案） ═════════════════════
+
+    /**
+     * 🔴 <b>按「能源仓总功率 ÷ 每并行耗电」算本轮的能量上限，写回主机。</b>
+     *
+     * <p>算式、口径、时机与模块侧 {@code PrimordialModuleRecipeLogic#shanhai$updatePowerParallelCap()}
+     * <b>逐条同源</b>（同一个 {@link ParallelPowerBudget}、同一个 {@link EnergyHatchPower}）——
+     * 两侧只有"读哪个门控等级"这一处不同，那里各自与自己的 {@code buildFinal…} 同源。
+     *
+     * <p>⚠️ 主机侧的 {@code getEuMultiplier()} 与模块侧同源（都来自 {@code MutableRecipesLogic}），
+     * 而 N5 系数取的是 {@code host.moduleSlotBonus()}（主机自己就是门控的持有者，没有"上游主机"这一步）。
+     *
+     * @return 本轮的能量上限；{@code 0} = 没有上限
+     */
+    private long shanhai$updatePowerParallelCap() {
+        final PrimordialOmegaEngineMachine host = getMachine();
+        if (!host.isPowerAutoParallel()) {
+            return ParallelOverrideMachine.ENERGY_CAP_NONE;
+        }
+        try {
+            final java.util.Set<GTRecipe> candidates = lookupRecipeSet();
+            final long ceiling = host.getParallelOverrideCeiling();
+            if (candidates.isEmpty()) {
+                // 🔴 2026-10-02 第二轮：不再写一个裸的"没有上限"，而是把**原因**一起写下去
+                //    （理由与模块侧那一处逐字相同，见 ParallelOverrideMachine.EnergyCapState 的注释）。
+                host.setEnergyCap(ParallelOverrideMachine.EnergyCapState.NO_CANDIDATE,
+                        ParallelOverrideMachine.ENERGY_CAP_NONE,
+                        ParallelOverrideMachine.ENERGY_CAP_NONE);
+                shanhai$logCapSkipped(host, "NO_CANDIDATE", "本轮没有可跑的候选配方");
+                return ParallelOverrideMachine.ENERGY_CAP_NONE;
+            }
+            final double engineMultiplier = getEuMultiplier();
+            final double n5Factor = PrimordialRecipeEffects.reductionFactor(host.moduleSlotBonus());
+            long worstCostMilli = 0L;
+            long firstEut = 0L;
+            long worstEut = 0L;
+            for (GTRecipe candidate : candidates) {
+                final long eut = RecipeHelper.getInputEUt(candidate);
+                if (firstEut == 0L) {
+                    firstEut = eut;
+                }
+                // 🔴 2026-10-02 第七轮：改成【毫 EU/t】口径（不再中途 round）。
+                //    旧写法 `Math.round(42 × 0.05) = 2` 就是用户那台「整机 688.13K > 仓 655,360」的真凶，
+                //    理由与算式逐条见 ParallelPowerBudget#perParallelMilliCost 的 javadoc。
+                // 🔴🔴 2026-10-02 第九轮（用户点名：「等一下，不同配方耗电是不同的，你不会取静态的数值了吧」）：
+                //    候选【多条】时 k 取【最贵的那一条】—— 与模块侧逐字同源，唯一实现是
+                //    ParallelPowerBudget#worstPerParallelMilliCost（本处不再自己写一遍 Math.max）。
+                //    ⚠️ 主机侧的候选集【不截断】：上游 MutableRecipesLogic.lookupRecipeSet() 给的是
+                //    这一配方类型下【全部】可跑配方 ⇒ 这里的 max 是"全部候选里最贵的一条"，
+                //    比"这一轮真被摊到的那几条"更保守（只会少给并行，不会超功率）。
+                //    ⚠️ worstEut 只给日志用（argmax 的可读性），【不参与任何算术】。
+                final long previousWorst = worstCostMilli;
+                worstCostMilli = ParallelPowerBudget.worstPerParallelMilliCost(
+                        previousWorst, eut, engineMultiplier, n5Factor);
+                if (worstCostMilli > previousWorst) {
+                    worstEut = eut;
+                }
+            }
+            final long totalPower = EnergyHatchPower.totalSteadyPowerPerTick(host);
+            final long cap = ParallelPowerBudget.parallelFromPowerMilli(totalPower, worstCostMilli, ceiling);
+            // 状态与数值【一次写下去】；判据 = ParallelOverrideMachine.classify（纯函数、唯一一份）。
+            final ParallelOverrideMachine.EnergyCapState state =
+                    ParallelOverrideMachine.classify(true, totalPower);
+            host.setEnergyCap(state, cap, worstCostMilli);
+            // 🔴 2026-10-02 第八轮修：这里上一版写的是 `worstCost`（残留的旧变量名，上一轮改名时的漏网）
+            //    ⇒ **真实 javac 报"找不到符号"**（语义编译判据当场抓到）。本文件的编译期一直是坏的。
+            shanhai$logPowerParallelCap(host, totalPower, firstEut, worstEut, worstCostMilli, cap, ceiling,
+                    engineMultiplier, n5Factor, candidates.size());
+            return cap;
+        } catch (Throwable t) {
+            // ⛔ 2026-10-02 第二轮订正：上一轮这里只打 `t.toString()` ⇒ 栈丢了、"为什么算不出"查不出来。
+            ShanhaiMod.LOGGER.warn("[SHANHAI-POWER-PARALLEL] 主机电力上限计算失败，本轮不做电力限制"
+                    + "（完整栈如下；状态已写成 ERROR，面板会显示「电上限异常」）：", t);
+            host.setEnergyCap(ParallelOverrideMachine.EnergyCapState.ERROR,
+                    ParallelOverrideMachine.ENERGY_CAP_NONE,
+                    ParallelOverrideMachine.ENERGY_CAP_NONE);
+            return ParallelOverrideMachine.ENERGY_CAP_NONE;
+        }
+    }
+
+    /** 🔴 主机侧「这一轮为什么没算出电上限」的可 grep 证据行（同形只打一次）。理由同模块侧那一处。 */
+    private static final java.util.Set<String> shanhai$capSkippedLogged =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private void shanhai$logCapSkipped(PrimordialOmegaEngineMachine host, String code, String why) {
+        if (shanhai$capSkippedLogged.size() > 256) {
+            return;
+        }
+        final String signature = code + "|" + why + "|" + host.getDefinition().getId();
+        if (!shanhai$capSkippedLogged.add(signature)) {
+            return;
+        }
+        ShanhaiMod.LOGGER.info("[SHANHAI-POWER-PARALLEL] 主机「{}」（{}）：本轮**没有算出**电力上限（{}：{}）"
+                        + " ⇒ 本轮不做电力限制（并行完全按原本口径：玩家填的上限 / MAX_PARALLEL）。",
+                host.getDefinition().getId(), host.getPos(), code, why);
+    }
+
+    /** 已报过的「电力上限」签名 —— 同形只报一次（与模块侧、以及本项目既有几处探针同一条纪律）。 */
+    private static final java.util.Set<String> shanhai$powerParallelLogged =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** 可 grep 的实机判据行（字段与模块侧同一批，方便两侧直接对比）。 */
+    private void shanhai$logPowerParallelCap(PrimordialOmegaEngineMachine host, long totalPower, long firstEut,
+                                             long worstEut, long worstCostMilli, long cap, long ceiling,
+                                             double engineMultiplier, double n5Factor, int candidateCount) {
+        final String kindSummary = EnergyHatchPower.kindSummary(host);
+        final String signature = totalPower + "|" + worstCostMilli + "|" + cap + "|" + kindSummary;
+        if (!shanhai$powerParallelLogged.add(signature)) {
+            return;
+        }
+        // 🔴 2026-10-02 第九轮：措辞与模块侧逐字同源 —— 参与运算的是【最贵】那条，不是印在前面的首条。
+        //    （用户原话：「等一下，不同配方耗电是不同的，你不会取静态的数值了吧」）
+        ShanhaiMod.LOGGER.info("[SHANHAI-POWER-PARALLEL] 主机「{}」：{} ⇒ 生效并行上限 {}；"
+                        + "（候选 {} 条：最贵 {} EU/t ⇒ 引擎耗能乘数 {} × N5 减免 {} ⇒ 每并行 {} EU/t"
+                        + "【进算式的是最贵那条；首条 {} EU/t，候选只有一条时两个数相同】）"
+                        + "【本行已改为「同一形态只打一次」】",
+                host.getDefinition().getId(),
+                ParallelPowerBudget.describe(totalPower, EnergyHatchPower.hatchCount(host), kindSummary,
+                        worstCostMilli, cap, ceiling),
+                cap, candidateCount, worstEut, engineMultiplier, n5Factor,
+                ParallelPowerBudget.formatMilli(worstCostMilli), firstEut);
     }
 
     /**
@@ -428,15 +629,21 @@ public class PrimordialEngineRecipeLogic extends MutableRecipesLogic<PrimordialO
             // 复算本引擎的并行预算（只用于诊断口径一致）。
             // 🔴 2026-09-26：改成 long 通道的那一份算式 —— 与 calculateParallels() 同源同值，
             //    否则这一行会在 long 档上打出【和真预算不一样的数】（诊断撒谎比没有诊断更糟）。
-            final long budget = PrimordialModuleMachine.saturatedMultiply(
-                    getMachine().getRecipeLogicMaxParallel(), getMultipleThreads());
+            // 🔴 2026-10-02 第五轮：这两个数【现在必须逐位相等】——
+            //    `budget` = 每线程上限 × T；`parentBudget` = 父类的 (long) getMaxParallel() × getMultipleThreads()。
+            //    改动前两者差 T 倍（那正是"退回父类就不生效"的病根）。这一行现在是**实机的自校验**：
+            //    玩家贴出这一行，若两者不等就说明 T 的两个来源漂移了。
+            final long budget = ShanhaiParallelBudget.parallelBudget(
+                    getMachine().getRecipeLogicMaxParallel(), getMachine().getEnergyParallel(),
+                    getMultipleThreads());
+            final long parentBudget = (long) getMachine().getMaxParallel() * (long) getMultipleThreads();
             // 状态码：0 = 有配方；1 = 无配方(match == null)
             final int code = matched == null ? 1 : 0;
             if (code != shanhai$lastGateCode) {
                 shanhai$lastGateCode = code;
                 ShanhaiMod.LOGGER.info("[SHANHAI-GATE] getRecipe() = {} ; 判定 = {} ; "
-                                + "maxParallel(int桥)={} × threads={} ⇒ long 预算={}（父类若仍走 int 会得到 {}）; "
-                                + "已成型={}",
+                                + "每线程上限(int桥 getMaxParallel)={} ; 跨配方线程 T={} ⇒ "
+                                + "本核预算={} ; 父类预算=(long)getMaxParallel()×T={} ; 两者相等={} ; 已成型={}",
                         matched == null ? "null" : "非 null（" + matched.duration + " tick）",
                         matched == null
                                 ? "卡在闸①/闸②（checkBeforeWorking 或 calculateParallels）"
@@ -444,7 +651,8 @@ public class PrimordialEngineRecipeLogic extends MutableRecipesLogic<PrimordialO
                         getMachine().getMaxParallel(),
                         getMultipleThreads(),
                         budget,
-                        (long) getMachine().getMaxParallel() * (long) getMultipleThreads(),
+                        parentBudget,
+                        budget == parentBudget,
                         getMachine().isFormed());
             }
         } catch (Throwable ignored) {

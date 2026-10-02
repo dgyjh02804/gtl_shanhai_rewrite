@@ -18,6 +18,7 @@ import com.shanhai.common.heat.ShanhaiHeatGate;
 import com.shanhai.common.machine.PrimordialOmegaEngineMachine;
 import com.shanhai.common.recipe.PrimordialRecipeEffects;
 import com.shanhai.common.recipe.ShanhaiRecipeTypes;
+import com.shanhai.common.thread.ShanhaiParallelBudget;
 import com.shanhai.ShanhaiMod;
 import com.shanhai.machine.MachineTooltips;
 import com.shanhai.registry.ShanhaiRegistration;
@@ -1527,6 +1528,48 @@ public final class ModuleRegistry {
         //      因为下面 ④ 之后的「并行进 long 档 ⇒ 时长下限 10 tick」必须用**同一个数**判定。
         //      【为什么用"预算"而不是"实际吃到的并行"】后者被输入量钳位（箱里有多少料 ÷ 每份用量），
         //      随箱子剩多少跳变；用它会让下限时灵时不灵。预算才是"这台机器的并行档位"。
+        // 🔴 2026-10-02 第三轮（用户裁决：换成【总量】口径）：本行调的公式已从
+        //    min(本机上限 × T, 电力上限 × T) 改成 min(本机上限, 电力上限 ÷ T)。
+        //    ⚠️ 本行属于【原生链】（全 24 台里只有被判定为发电的那台走），而这条路
+        //    【没有第二处再乘 T】⇒ 改后发电机拿到的并行不再随线程数放大：
+        //    T = 121、没有电力上限时 旧 = 2147483647 × 121 = 259845521287 → 新 = 2147483647。
+        //    这是本轮最大的【真实数值变更】，正是 2026-09-30「零点能反应堆吃跨配方并行」
+        //    那条已验收修复所依赖的那个乘积 ⇒ 已显式上报待裁（交付报告 §11.4），不擅自回改。
+        //
+        // 🔴🔴 2026-10-02 第五轮（用户裁决 ②「保留本机上限 × T，不动」）：
+        //    【结论】上面那条"改成 ÷T"的写法已经改回来了 —— 本行现在**不是** parallelBudget
+        //    （那个函数在第四轮起返回"每线程上限"，本行要的是**总量**），而是
+        //    totalParallelLimitFor(本机上限, T) = 本机上限 × T。
+        //
+        //    【为什么这里【故意不统一口径】—— 别再"顺手统一"掉，那会弄坏一条已验收的修复】
+        //    ① 消费方不同：本行喂的是 PrimordialRecipeEffects.applyParallel(recipe, module, limit)，
+        //       那个实参语义是【这台机器这一轮一共允许多少份并行】（= 总量口径），
+        //       与引擎父类 MutableRecipesLogic.calculateParallels() 里的
+        //       `(long) getMaxParallel() * getMultipleThreads()` 是同一个东西；
+        //       而接口层 ParallelOverrideMachine#applyEnergyCap 输出的是【每个跨配方线程】的上限。
+        //       两者【差一个 × T】，形状相同而含义不同 —— 这正是"统一"会出事的地方。
+        //    ② 这条乘积是 2026-09-30 已验收修复的全部内容：用户报「零点能反应堆不吃跨配方并行，
+        //       那个发电量都没加」的根因就是本行当时【没有】乘 T；修好之后 30 枚共鸣残片
+        //       （T = 121）才真的把并行从 2147483647 抬到 259845521287。
+        //       用户在 2026-10-02 第五轮明确裁决：**保留这个乘积**。
+        //    ③ 恒等保证（数值上可离线断言，见判据 B 段）：
+        //       · 电力自动【关着】时（= 9/30 验收时的状态，也是发电那台的常态：它 setUseMultipleRecipes(false)
+        //         ⇒ 根本不会走 calculateParallels() ⇒ energyParallel 恒为 ENERGY_CAP_NONE）
+        //         getCurrentParallel() 不做任何钳制 ⇒ 本行 = 表值 × T，与验收时逐位相同；
+        //       · 🔴🔴 2026-10-02 第六轮（用户裁决 ①）：上面那句"energyParallel 恒为 ENERGY_CAP_NONE"
+        //         是一条【推断】，用户明确要求<b>不依赖它</b> ——「不管'它电上限是否恒为 0'那个推断对不对，
+        //         都让它不受电上限钳制」。⇒ 已给发电那台加了<b>结构性豁免</b>：
+        //         {@code PrimordialModuleMachine#isEnergyCapExempt() = getDefinition().isGenerator()}
+        //         ⇒ {@code ParallelOverrideMachine#applyEnergyCap} 第一句就返回 base（电上限视为 ∞）
+        //         ⇒ 本行 = 表值 × T 这件事【不再依赖任何推断】，写入口怎么写都改不了它。
+        //         判据（离线、可复跑）见 handoff/outbound/自动并行-判据5 的 D 段「新增 · 豁免」那两条。
+        //       · 线程槽空（T = 1）时 totalParallelLimitFor(x, 1) == max(1, x) 对任意 x 成立
+        //         （加载期自检 [SHANHAI-PARALLEL-BUDGET] 逐档断言）。
+        //    ④ ⛔ 已被本轮改掉的那一版（第四轮，作废，原文逐字留档）：
+        //         final long parallelBudget = ShanhaiParallelBudget.parallelBudget(
+        //                 module.getCurrentParallel(), module.getEnergyParallel(), module.getCrossRecipeThreads());
+        //       它给出的是【每线程】口径 ⇒ 发电那台在 T = 121 时从 259845521287 掉到 2147483647，
+        //       正好把 9/30 那条修复弄坏。
         final long parallelBudget = PrimordialModuleMachine.totalParallelLimitFor(
                 module.getCurrentParallel(), module.getCrossRecipeThreads());
         modified = PrimordialRecipeEffects.applyParallel(modified, module, parallelBudget);

@@ -9,11 +9,17 @@ version = mod_version
 group = 'com.shanhai'
 
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(17)
+    // Compile with a JDK 21 toolchain because some vendored deps in libs/ are now Java 21
+    // bytecode (e.g. gtladditions-3.2.8Custom-fix2.jar is 100% class file v65), which a
+    // JDK 17 javac refuses to read ("错误的类文件 ... 版本 65.0, 应为 61.0").
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+    // ...but keep EMITTING Java 17 bytecode (class file v61) via --release 17, so the
+    // produced jar still loads on both a Java 17 and a Java 21 runtime.
+    options.release = 17
     options.compilerArgs += ['-Xlint:-processing', '-Xlint:-deprecation', '-Xlint:-removal']
 }
 

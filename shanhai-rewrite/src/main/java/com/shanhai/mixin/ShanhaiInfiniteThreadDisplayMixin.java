@@ -279,6 +279,22 @@ public class ShanhaiInfiniteThreadDisplayMixin {
         //    判据取【并行预算进 long 档】（> 2147483647），与 ModuleRegistry 里那一步用的是**同一个纯函数**
         //    ⇒ 不会出现"提示说已抬下限、机器其实没抬"这种漂移（本工程最忌讳的静默分叉）。
         //    ⚠️ 必须在服务端算：currentParallel 不是 @DescSynced 字段，客户端读到的是字段初值 64。
+        //
+        // 🔴🔴 2026-10-02 第五轮（用户裁决 ③「Jade 显示跟着改」）：**本处仍然是同口径的，无需改代码**。
+        //    上面那个 `parallel` 键写的是 {@link PrimordialModuleMachine#getJadeParallel()}
+        //    = getDisplayParallel() = getCurrentParallel() = getEffectiveParallel()
+        //    —— 也就是**引擎 getMaxParallel() 的同一个源头**；本轮把「电上限 ÷ T」落进
+        //    ParallelOverrideMachine#applyEnergyCap 之后，那一行**自动**跟着变成新口径
+        //    （全工程没有任何一处另存一份并行数 ⇒ 界面与引擎结构上不可能分叉）。
+        //    而本行的 `totalParallelLimitFor(currentParallel, T)` = currentParallel × T
+        //    = **引擎真正吃的总预算**（父类 `(long) getMaxParallel() * getMultipleThreads()` 的逐位同值形态）
+        //    ⇒ 它与上面那个数字【本来就是同一口径的两半】（每线程上限 ／ 总预算），本轮一个字都不用改。
+        //    ⛔ 上一轮交付报告 §11.5 写的那句「Jade 行仍会显示 259845521287 那一档，而引擎这边拿到
+        //       2147483647 ⇒ 显示与引擎口径暂时不一致」——**该结论随第五轮作废**：
+        //       显示的是"每线程上限"、引擎吃的也是"每线程上限 × T"，两者从来就是同一件事。
+        //    ⚠️ 之所以**只改注释、不改一行代码**：mixin 是本工程常年的禁改区（改错 = 客户端崩屏）。
+        //       本轮判据用【编译前后 .class 逐位比对】证明本次改动是"零指令改动"
+        //       （见交付报告 §12.4：改后 SHA-256 必须与改前逐位相同）。
         final long parallelBudget = PrimordialModuleMachine.totalParallelLimitFor(
                 module.getCurrentParallel(), module.getCrossRecipeThreads());
         if (PrimordialRecipeEffects.isLongScaleParallel(parallelBudget)) {

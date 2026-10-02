@@ -28,6 +28,7 @@ import com.shanhai.ShanhaiMod;
 import com.shanhai.client.compat.ConfiguratorTabGridCompat;
 import com.shanhai.common.compat.GtlAddCompat;
 import com.shanhai.common.recipe.PrimordialRecipeEffects;
+import com.shanhai.common.thread.ShanhaiParallelBudget;
 import com.shanhai.config.ShanhaiConfig;
 import com.shanhai.machine.engine.ModuleSlotDiagnostics;
 import com.shanhai.machine.module.ModuleSetBlockWatch;
@@ -347,22 +348,172 @@ public class PrimordialOmegaEngineMachine
         return MAX_PARALLEL;
     }
 
+    // ⛔⛔ 【2026-10-02 第二轮：本覆写已删除，原文逐字留档】getEffectiveParallel()
+    //   ⛔ 旧原文（作废）：
+    //       /**
+    //        * 覆盖生效之后的并行。
+    //        *
+    //        * <p>🔴 2026-09-27：多了一道 {@code min(…, 天花板)}。
+    //        * 主机侧<b>恒等</b>（天花板 = {@link #MAX_PARALLEL} = {@code Long.MAX_VALUE}，
+    //        * {@code min(任何 long, Long.MAX_VALUE)} 就是它自己）⇒ <b>逐值等价于改动前</b>。
+    //        * 加它的理由：宿主 {@link ParallelOverrideMachine} 的契约在模块侧需要这条不变式
+    //        * （覆盖值永远不许超过机器能达到的并行数），两侧共用同一句写法才不会漂移。
+    //        *
+    //        * <p>🔴 <b>2026-10-02 订正</b>：「主机侧恒等」这句现在<b>只对"电力自动关着"成立</b>。
+    //        * 新增的 {@link ParallelOverrideMachine#applyEnergyCap(long)} 会在开关打开时再压一道
+    //        * {@code min(…, 电力上限)}；开关默认关 ⇒ <b>本节上面那句在默认态下仍然逐字为真</b>。
+    //        */
+    //       @Override
+    //       public long getEffectiveParallel() {
+    //           final long auto = Math.max(1L, getAutoParallel());
+    //           if (parallelOverride > ParallelOverrideMachine.PARALLEL_AUTO) {
+    //               return applyEnergyCap(Math.min(parallelOverride, auto));
+    //           }
+    //           return applyEnergyCap(auto);
+    //       }
+    //   ⛔ 作废原因：本方法与模块侧 {@code PrimordialModuleMachine#getEffectiveParallel()} 是
+    //      **逐字相同的同一段逻辑**（差别只有 {@code auto} 从哪来，而它两边都由
+    //      {@link #getAutoParallel()} 提供）⇒ 两份实现在本工程是最忌讳的漂移源。
+    //      🔴 现由 {@link ParallelOverrideMachine#getEffectiveParallel()}（接口 default，全工程唯一一份）
+    //      承担，本类不再覆写。<b>数值逐位不变</b>（判据 A/C 段逐档对过账）。
+    //      ⚠️ 同一轮里 {@code getEffectiveParallel()} 的语义还多了一条用户裁决：
+    //      **「电力自动」开着时，输入框里的值完全不参与**（落点
+    //      {@link ParallelOverrideMachine#getEffectiveOverride()}）—— 那一句是行为变更，不是重构。
+
+    // ═════════════════════ 🔴 电力自动（2026-10-02 新增 · 用户定方案） ═════════════════════
+
     /**
-     * 覆盖生效之后的并行。
+     * 🔴 <b>「电力自动」开关。</b>
      *
-     * <p>🔴 2026-09-27：多了一道 {@code min(…, 天花板)}。
-     * 主机侧<b>恒等</b>（天花板 = {@link #MAX_PARALLEL} = {@code Long.MAX_VALUE}，
-     * {@code min(任何 long, Long.MAX_VALUE)} 就是它自己）⇒ <b>逐值等价于改动前</b>。
-     * 加它的理由：宿主 {@link ParallelOverrideMachine} 的契约在模块侧需要这条不变式
-     * （覆盖值永远不许超过机器能达到的并行数），两侧共用同一句写法才不会漂移。
+     * <h2>⛔ 2026-10-02 第二轮改判：默认 {@code false} ⇒ <b>默认 {@code true}</b>（用户点名）</h2>
+     * 用户原话（逐字）：
+     * <blockquote>「还有我的额外要求：<b>放置机器时默认开启这个电力自动并行</b>，
+     * 并且开启这个电力自动并行之后自动禁用上面的输入框和一键最大按钮」</blockquote>
+     * ⛔ 旧值 {@code false} 的理由（原文留档）：「默认 false ⇒ 关着 ⇒ 本功能对老存档一个 bit 都不改」。
+     * <p>🔴 <b>代价（必须让用户知情）</b>：本功能出现之前就存在的机器（存档里没有这个键）读档时
+     * 按字段默认值 <b>true</b> 生效 ⇒ <b>老存档里的主机一读档就变成"电力自动开着"</b>，
+     * 并行数开始被能源仓总功率钳制。逐档说明见模块侧 {@code PrimordialModuleMachine#powerAutoParallel}
+     * 的同一段（两侧逐字同款）。
+     *
+     * <p>注解理由与模块侧 {@code PrimordialModuleMachine#powerAutoParallel} 逐字相同
+     * （{@code @Persisted} 拆装保持 + {@code @DescSynced} 客户端面板不说谎）。
+     */
+    @Persisted
+    @DescSynced
+    private boolean powerAutoParallel = true;
+
+    /**
+     * <b>本轮算出来的电力上限</b>（{@code 0} = 没有 / 尚未算过）。<b>刻意不 {@code @Persisted}</b>
+     * —— 它是现算值，落盘只会在重载后留下一个过期的假数字。
+     */
+    @DescSynced
+    private long energyParallel = ParallelOverrideMachine.ENERGY_CAP_NONE;
+
+    /**
+     * 🔴 <b>2026-10-02 第二轮新增：这个"没有上限"到底是哪一种"没有"。</b>
+     * 逐档文案见 {@link ParallelOverrideMachine#energyCapReasonText}；与模块侧同一套。
+     */
+    @DescSynced
+    private int energyCapState = ParallelOverrideMachine.EnergyCapState.NOT_EVALUATED.ordinal();
+
+    /**
+     * 🔴🔴 <b>2026-10-02 第八轮新增：本轮的「每并行耗电 k」（毫 EU/t）—— 面板那一行读的就是它。</b>
+     * 用户裁决 ②：把那个一直只能靠 Jade 反推的乘数搬到界面上。与模块侧逐条同源
+     * （不 {@code @Persisted}、{@code @DescSynced}、只经 {@code setEnergyCap} 三参版写入）。
+     */
+    @DescSynced
+    private long perParallelMilliCost = ParallelOverrideMachine.ENERGY_CAP_NONE;
+
+    @Override
+    public boolean isPowerAutoParallel() {
+        return powerAutoParallel;
+    }
+
+    @Override
+    public void setPowerAutoParallel(boolean value) {
+        if (value == powerAutoParallel) {
+            return;
+        }
+        powerAutoParallel = value;
+        // 一改开关就清掉旧上限、旧状态与旧 k（同模块侧：防止面板留着一句过期的话）。
+        energyParallel = ParallelOverrideMachine.ENERGY_CAP_NONE;
+        energyCapState = ParallelOverrideMachine.EnergyCapState.NOT_EVALUATED.ordinal();
+        perParallelMilliCost = ParallelOverrideMachine.ENERGY_CAP_NONE;
+        notifyBlockUpdate();
+    }
+
+    @Override
+    public long getEnergyParallel() {
+        return energyParallel;
+    }
+
+    @Override
+    public long getPerParallelMilliCost() {
+        return perParallelMilliCost;
+    }
+
+    /**
+     * 🔴🔴 <b>主机侧的跨配方线程数 T —— 供接口层把电上限「÷T」（2026-10-02 第五轮用户裁决 ①）。</b>
+     *
+     * <pre>
+     *   T = ShanhaiParallelBudget.crossRecipeThreadsForHost(BASE_THREADS, getAdditionalThread())
+     *     = saturatedCast(128 + 0) = 128                      ← 当前取值
+     * </pre>
+     *
+     * <h2>🔴 为什么必须和 {@code PrimordialEngineRecipeLogic#getMultipleThreads()} <u>同一个函数</u></h2>
+     * 父类的预算是 {@code (long) getMaxParallel() * getMultipleThreads()}：
+     * <ul>
+     *   <li>{@code getMaxParallel()} → {@link #getRecipeLogicMaxParallel()} → {@code getEffectiveParallel()}
+     *       → {@code applyEnergyCap(base, }{@link com.shanhai.common.machine.ParallelOverrideMachine#getEnergyCapThreads()}{@code )}</li>
+     *   <li>{@code getMultipleThreads()} → {@code PrimordialEngineRecipeLogic.getMultipleThreads()}</li>
+     * </ul>
+     * 若两边取的 T 不同（比如这里另写一遍 {@code 128 + …}），预算就会是
+     * {@code min(本机上限, 电上限÷T₁) × T₂} ⇒ <b>T₂ &gt; T₁ 时 &gt; 电上限 ⇒ 总耗电超 P</b>
+     * ⇒ 两处都调 {@link ShanhaiParallelBudget#crossRecipeThreadsForHost(int, int)}（<b>唯一一份实现</b>）。
+     *
+     * <p>⚠️ 本方法<b>不读任何可能还没初始化的东西</b>（{@code getAdditionalThread()} 是常量返回）
+     * ⇒ 构造期被调用也安全（不会 NPE、不会拿到半初始化的字段）。
      */
     @Override
-    public long getEffectiveParallel() {
-        final long auto = Math.max(1L, getAutoParallel());
-        if (parallelOverride > ParallelOverrideMachine.PARALLEL_AUTO) {
-            return Math.min(parallelOverride, auto);
+    public int getEnergyCapThreads() {
+        return ShanhaiParallelBudget.crossRecipeThreadsForHost(
+                PrimordialEngineRecipeLogic.BASE_THREADS, getAdditionalThread());
+    }
+
+    @Override
+    public ParallelOverrideMachine.EnergyCapState getEnergyCapState() {
+        return ParallelOverrideMachine.EnergyCapState.values()[energyCapState];
+    }
+
+    /** 状态、数值与「每并行耗电 k」的唯一写入口（一次写三样）；全没变 ⇒ 不刷包。 */
+    @Override
+    public void setEnergyCap(ParallelOverrideMachine.EnergyCapState state, long value,
+                             long perParallelMilliCost) {
+        final ParallelOverrideMachine.EnergyCapState nextState = state == null
+                ? ParallelOverrideMachine.EnergyCapState.ERROR : state;
+        final long nextValue = value <= ParallelOverrideMachine.ENERGY_CAP_NONE
+                ? ParallelOverrideMachine.ENERGY_CAP_NONE : value;
+        final long nextCost = perParallelMilliCost <= ParallelOverrideMachine.ENERGY_CAP_NONE
+                ? ParallelOverrideMachine.ENERGY_CAP_NONE : perParallelMilliCost;
+        if (nextState.ordinal() == energyCapState && nextValue == energyParallel
+                && nextCost == this.perParallelMilliCost) {
+            return;
         }
-        return auto;
+        energyCapState = nextState.ordinal();
+        energyParallel = nextValue;
+        this.perParallelMilliCost = nextCost;
+        notifyBlockUpdate();
+    }
+
+    @Override
+    public void setEnergyParallel(long value) {
+        final long next = value <= ParallelOverrideMachine.ENERGY_CAP_NONE
+                ? ParallelOverrideMachine.ENERGY_CAP_NONE : value;
+        if (next == energyParallel) {
+            return;
+        }
+        energyParallel = next;
+        notifyBlockUpdate();
     }
 
     /**
@@ -2044,10 +2195,16 @@ public class PrimordialOmegaEngineMachine
         // 🔴 2026-09-27 订正：原文写死「2^30」。那是 MAX_PARALLEL 变成 Long.MAX_VALUE 之前的旧值，
         //    属于本工程红线「活的界面上不许放假数据」点名的形态 ⇒ 改成读真实值（同一条链上的生效值）。
         //    有玩家覆盖时如实写明是玩家设定的数（覆盖是"上限"，不是"精确并行"）。
+        // 🔴🔴 2026-10-02 第二轮订正：判据从 getParallelOverride() 改成 getEffectiveOverride()。
+        //    **旧写法在"电力自动开着 + 框里填过数"时会印「（玩家设定）」——那是一句假数据**：
+        //    按用户裁决 A，电力自动开着时框里的值【完全不参与运算】（见 ParallelOverrideMachine
+        //    #getEffectiveOverride）。⇒ 新增一档，把"电力自动把框里的值接管了"如实说出来。
         textList.add(Component.literal("并行上限：" + getEffectiveParallel()
-                        + (getParallelOverride() > ParallelOverrideMachine.PARALLEL_AUTO
-                                ? "（玩家设定；实际并行由输入量与输出空间决定）"
-                                : "（本机上限；实际并行由输入量与输出空间决定）"))
+                        + (isPowerAutoParallel()
+                                ? "（电力自动；框里的数不参与，实际并行由能源仓功率与输入量/输出空间决定）"
+                                : (getEffectiveOverride() > ParallelOverrideMachine.PARALLEL_AUTO
+                                        ? "（玩家设定；实际并行由输入量与输出空间决定）"
+                                        : "（本机上限；实际并行由输入量与输出空间决定）")))
                 .withStyle(ChatFormatting.GRAY));
     }
 
